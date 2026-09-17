@@ -1,20 +1,106 @@
-> **Note:** this is the upstream `examples/next/routing` README, kept as the
-> architecture reference while the prototype is built on top of it. Names are
-> updated (`ProjectHub`, `GroupChat`); some details no longer apply — notably the
-> `?transport=capnweb` toggle, which this prototype removed. Slice 6 replaces
-> this file with the project README and the LOC/dependency numbers.
+# Dembrane participant portal — prototype v3
 
-## Chat model provider
+A rebuild of Dembrane's participant portal on [Cloudflare Agents]. A host opens
+a console, shows a QR code, and every device that scans it gets its own
+conversation — its own Durable Object, its own chat thread, its own voice
+calls. The host can read and search across all of them without waking any of
+them.
 
-`MODEL_PROVIDER` in `.dev.vars` picks the chat model: `workers-ai` (default,
-Kimi K2 through the AI binding, no keys) or `openrouter` (needs
-`OPENROUTER_API_KEY`; `OPENROUTER_MODEL` defaults to `openrouter/free`, capped at
-50 requests a day). Restart `pnpm start` after changing it.
+[Cloudflare Agents]: https://developers.cloudflare.com/agents/
 
-## Speech-to-text providers
+```sh
+pnpm install
+pnpm start          # http://localhost:5173 → redirects to a fresh event
+```
 
-Conversation calls are transcribed by the provider named in `STT_PROVIDER`
-(`.dev.vars`; see `.dev.vars.sample` and `src/server/stt/`):
+Opening `/` mints a random event id and sends you to that event's host console.
+Serve on a LAN address (`pnpm start` already passes `--host`) and the QR code
+encodes that address, so an event runs from a laptop on a local router with no
+internet.
+
+## Routes
+
+Every route hangs off an event id.
+
+| Route                              | Who      | What                                                            |
+| ---------------------------------- | -------- | --------------------------------------------------------------- |
+| `/events/{eventId}/secret`         | the host | Console: private host thread, QR code, every conversation       |
+| `/events/{eventId}`                | a device | What the QR code points at; spawns a conversation and redirects |
+| `/events/{eventId}/group/{chatId}` | a device | One conversation's own thread                                   |
+
+Access is decided by the route alone — there is no authentication. Anyone with
+an event id can reach its host console. That is deliberate for a prototype and
+must change before this is deployed anywhere real.
+
+## Architecture
+
+One `ProjectHub` Durable Object per event owns a catalog of conversations and
+routes into them. Each conversation is its own `GroupChat` Durable Object, with
+its own SQLite, alarms and placement.
+
+```
+ProjectHub (one per event, plain DurableObject)   GroupChat (one per conversation)
+┌──────────────────────────────────┐          ┌───────────────────────────────┐
+│ RoutedAgents, route "chats"      │ forward  │ messages, onboarding, tools   │
+│   id → opaque physical name      │─────────▶│ voice calls + transcript      │
+│   + metadata: title, lastMessage │          │ own SQLite, alarms, placement │
+│     transcript, seq              │◀─────────│ owns its own WebSocket        │
+│ WebSockets → HubCallables        │   push   └───────────────────────────────┘
+└──────────────────────────────────┘
+  listChats / searchChats / deleteChat
+```
+
+The hub never wakes a conversation to list or search it. Each conversation
+pushes its own title, latest message and call transcript back into the hub
+(`recordChatActivity`), fenced by a per-chat sequence number inside
+`blockConcurrencyWhile` so a delayed push cannot overwrite a newer one. That
+pushed metadata is what the sidebar renders and what the host's agent tools
+read — which is how "what's happening at the tables?" costs one Durable Object
+read instead of N.
+
+The host's private thread is a `GroupChat` like any other, distinguished only
+by `kind: "host"`. One chat implementation, not two.
+
+## Layout
+
+The directory is the runtime boundary.
+
+```
+src/
+  server/                    runs on the Worker
+    index.ts                 entry: DO re-exports + fetch  (wrangler `main`)
+    group-chat.ts            a conversation: messages, tools, voice, hub pushes
+    project-hub.ts           the event catalog, routing, search
+    validate.ts              guards on the browser-reachable surface
+    model.ts                 chat model selection
+    stt/                     transcriber selection + local whisperfile
+    prompts/                 onboarding and host system instructions
+  components/                runs in the browser
+    HostView  ChatPane  GroupView  JoinView  JoinCode  ShareLink  ModeToggle
+  hooks/                     useHub  useRoute  useCall
+  client.tsx                 entry: route switch + createRoot
+  router.ts  shared.ts  types.ts  styles.css     shared by both sides
+```
+
+Nothing under `server/` reaches the browser bundle, and the wire contract lives
+in exactly one place (`types.ts`, `shared.ts`) rather than being described twice.
+
+## Configuration
+
+Copy `.dev.vars.sample` to `.dev.vars`. Both providers below default to
+something that works with no keys at all. Changing `.dev.vars` needs a restart
+of `pnpm start`; the host console header shows which model and transcriber are
+live.
+
+### Chat model
+
+`MODEL_PROVIDER` picks the chat model: `workers-ai` (default, Kimi K2 through
+the AI binding, no keys) or `openrouter` (needs `OPENROUTER_API_KEY`;
+`OPENROUTER_MODEL` defaults to `openrouter/free`, capped at 50 requests a day).
+
+### Speech-to-text
+
+Conversation calls are transcribed by the provider named in `STT_PROVIDER`.
 
 | `STT_PROVIDER`    | Runs on                     | Trade-off                                                                                                                                                                |
 | ----------------- | --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
@@ -22,138 +108,51 @@ Conversation calls are transcribed by the provider named in `STT_PROVIDER`
 | `flux`            | Workers AI, Deepgram Flux   | Same WebSocket path and caveat as `nova3`.                                                                                                                               |
 | `whisper-local`   | whisperfile on this machine | Offline, no Cloudflare calls. Lower quality, no interim text; an utterance lands after ~800ms of silence.                                                                |
 
-To use `whisper-local`:
+To run fully offline:
 
-```bash
-pnpm stt:setup    # once: downloads whisper-tiny.en.llamafile (~90MB) into .whisperfile/
+```sh
+pnpm stt:setup    # once: downloads whisper-tiny.en.llamafile (~90MB)
 pnpm stt:server   # leave running alongside `pnpm start`
 ```
 
-Changing `.dev.vars` needs a restart of `pnpm start`. The host console header
-shows which model and transcriber are live.
+## Scripts
 
-# Next: routing
+| Command             | Does                                        |
+| ------------------- | ------------------------------------------- |
+| `pnpm start`        | Vite dev server, bound to the LAN           |
+| `pnpm test`         | Vitest                                      |
+| `pnpm typecheck`    | `tsc --noEmit`                              |
+| `pnpm lint`         | oxlint (import, react, jsx-a11y, vitest)    |
+| `pnpm format`       | oxfmt check                                 |
+| `pnpm format:write` | oxfmt fix                                   |
+| `pnpm types`        | Regenerate `env.d.ts` from `wrangler.jsonc` |
+| `pnpm deploy`       | Build and `wrangler deploy`                 |
 
-An early-access example showing `RoutedAgents` from `agents/routing`
-installed on a plain Cloudflare `DurableObject`. The hub does not extend
-`Agent`; its targets do. It is the recommended shape for "many chats per
-user": **one top-level Durable Object per chat** (`GroupChat`), owned and
-routed to by **one per-user hub** (`ProjectHub`).
+## Size
 
-```
-ProjectHub "alice" (plain DurableObject)      GroupChat (one per chat, opaque name)
-┌────────────────────────────────┐         ┌──────────────────────────┐
-│ RoutedAgents route "chats"     │ forward │ messages                 │
-│  id → physical name,           │────────▶│  role, text, at          │
-│       title, lastMessage       │         │  (own SQLite, own alarms,│
-│ WebSockets callables           │◀────────│   own placement)         │
-└────────────────────────────────┘  push   └──────────────────────────┘
-   listChats / searchChats / deleteChat       addMessage / getMessages
-   read and write ONLY the hub                 owns its WebSocket
-```
+The point of the rebuild is how little there is of it. Measured on this repo:
 
-| URL                                             | Handled by                                     |
-| ----------------------------------------------- | ---------------------------------------------- |
-| `/agents/project-hub/alice`                     | `ProjectHub` "alice", JSON view of the catalog |
-| `/agents/project-hub/alice/chats/{id}`          | the `GroupChat` behind that entry              |
-| `/agents/project-hub/alice/chats/{id}/messages` | same `GroupChat`, sees the path `/messages`    |
+|                      |                  |
+| -------------------- | ---------------- |
+| Runtime dependencies | 10 (plus 15 dev) |
+| Browser code         | 862 lines        |
+| Worker code          | 859 lines        |
 
-```ts
-export class ProjectHub extends DurableObject<Env> {
-  readonly chats = new RoutedAgents<GroupChat, ChatMeta>({
-    namespace: this.env.GroupChat,
-    route: "chats",
-  });
-  readonly webSockets = new WebSockets({ callables: new HubCallables(this) });
-  readonly lifecycle = Lifecycle.install(this).use(this.chats).use(this.webSockets);
-}
-```
+For the comparison against the existing `dembrane-echo` frontend that motivated
+this, see [`docs/PLAN.md`](docs/PLAN.md) — those figures are quoted from that
+document and were not re-measured here.
 
-## Why not facets (dynamic agents)?
+## Known issues
 
-A chat fails the facet test on every axis: it needs no isolation
-boundary from a parent, it wants its own alarms (facets cannot set
-alarms), a user accumulates an unbounded number of them (a facet tree is
-pinned to one machine and stored as one logical root object), and
-every WebSocket frame to a facet wakes the root parent. Facets are for
-code the parent _supervises_ — dynamically-loaded or generated code,
-per-run tool agents — reached via `this.dynamicAgents`. See
-`docs/agents/sub-agents.md` for the decision rule.
+- **A call's transcript may not reach the thread.** Interim text appears while
+  recording, but no message is written when the call ends. `onTranscript` only
+  fires on a _finalized_ transcript, and `onCallEnd` returns silently when none
+  arrived — which is also what happens when the Nova 3 socket dies mid-call
+  under `vite dev`. Undiagnosed; `whisper-local` is the workaround to try.
+- **No authentication.** See Routes above.
 
-## What `RoutedAgents` does for the hub
+## Background
 
-- **Creation** allocates a public chat ID and an opaque physical name
-  without waking anything. The hub then calls `init()` on the new chat
-  once, through the typed stub `get(id)` returns, so the chat knows its
-  owner.
-- **Routing.** Requests and WebSocket upgrades under `/chats/{id}` are
-  forwarded to that chat. The chat answers the upgrade and owns the
-  socket, so chat frames never wake the hub. An unknown or deleted ID is
-  a `404` from the capability; the hub's `onRequest` never sees it.
-- **Listing and search** read only the hub. Each chat pushes its title
-  and last message back with `recordChatActivity()`, which fences the
-  push's own chat-local message ordinal against the entry's current one,
-  inside `blockConcurrencyWhile`, before calling `setMetadata()` — a
-  push delayed by a slow round-trip can't overwrite one that arrived
-  first, two concurrent pushes can't both read the same stale value, and
-  two messages landing in the same millisecond never tie the way a
-  wall-clock fence would. Entries list most recently updated first, ties
-  broken by write order.
-- **Deletion** is `chats.delete(id)`: the entry is hidden, the chat is
-  condemned so it wipes its own storage moments later, and the row is
-  removed. A push for a deleted chat returns `false`, so delayed
-  activity cannot resurrect it.
-
-The pushed metadata is derived data. A failed push leaves it stale until
-the chat's next message; the chat itself stays the source of truth.
-Idempotency and repair belong to the production design in
-[`design/rfc-user-chat-durable-objects.md`](../../../design/rfc-user-chat-durable-objects.md).
-
-## The hub is a plain Durable Object
-
-The hub has no `@callable()` methods and no `Agent` base class, yet the
-browser reaches it with `useAgent` like any Agent. The `WebSockets`
-capability speaks the Agent protocol for it: on connect it sends the
-identity frame that resolves `ready`, and it answers the `rpc` frames that
-`stub` and `call()` send against the hub's `RpcTarget`. The client picks the
-wire with `transport: "cf-websocket" | "capnweb"` (add `?transport=capnweb` to
-the page URL to try the second). Each chat still reaches its owner with a
-plain Durable Object stub, `env.ProjectHub.getByName(userId)`.
-
-Install order matters: `RoutedAgents` goes first so a forwarded upgrade
-under `/chats/{id}` reaches the chat, and only the hub's own upgrades fall
-through to the WebSockets capability.
-
-Two sharp edges to design around:
-
-- **Pick a route that cannot collide.** Forwarding matches every occurrence
-  of the route segment in the path. If the hub's own name, or a path the
-  hub handles itself, is literally `chats`, a coincidental match with no
-  active entry behind it is answered `404` instead of reaching the hub.
-- **A routed suffix cannot address a chat's own dynamic agents.** A
-  `/sub/{class}/{name}` marker is resolved against the hub before this
-  capability runs. Reach a chat's dynamic agents through a direct
-  connection to that chat.
-
-This is a demo: anyone who knows a user ID can list, route into, and delete
-that user's chats. Put authentication in front of `routeAgentRequest` and
-derive the hub name from the session before deploying something like it.
-
-## Run
-
-```sh
-pnpm install
-pnpm run start
-```
-
-The React UI (Vite + Kumo) shows the whole pattern: the sidebar and
-search use one `useAgent` connection to the plain hub, and each open chat
-gets its own `useAgent` connection through the hub's route via `basePath`.
-No model is wired in; the "assistant" reply is an echo that proves both
-roles land in the chat's own SQLite.
-
-## Test
-
-```sh
-pnpm run test
-```
+`docs/PLAN.md` and `docs/BRAINSTORM.md` are frozen records of how this
+prototype was specced and built. They are history, not current documentation —
+where they disagree with this README or the code, they are wrong.
