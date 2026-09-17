@@ -56,7 +56,11 @@ export function ChatPane({
   // a ref: a fresh callback each render would otherwise re-fire this effect,
   // refresh the list, re-render, and loop for as long as a chat is open.
   const activity = useRef(onActivity);
-  activity.current = onActivity;
+  // Assigned from an effect rather than during render; effects run in
+  // declaration order, so it is current before the one below reads it.
+  useEffect(() => {
+    activity.current = onActivity;
+  });
   useEffect(() => {
     if (!isStreaming) activity.current?.();
   }, [isStreaming]);

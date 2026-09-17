@@ -26,7 +26,9 @@ export function HostView({ eventId }: { eventId: string }) {
     const needle = query.trim();
     setChats(needle === "" ? await api.listChats() : await api.searchChats(needle));
   }, [api, query]);
-  refresh.current = () => void refreshChats();
+  useEffect(() => {
+    refresh.current = () => void refreshChats();
+  });
 
   useEffect(() => {
     if (!hub.identified) return;
@@ -121,6 +123,7 @@ export function HostView({ eventId }: { eventId: string }) {
                   <button
                     type="button"
                     onClick={() => setActiveId(chat.id)}
+                    aria-label={`Open ${chat.metadata?.title ?? "new conversation"}`}
                     className="min-w-0 flex-1 px-4 py-3 text-left"
                   >
                     <div className="truncate">
@@ -170,7 +173,9 @@ export function HostView({ eventId }: { eventId: string }) {
           <aside className="flex w-64 flex-col overflow-y-auto border-l border-kumo-line">
             <JoinCode eventId={eventId} />
             {/* The host's own thread is nobody else's to open. */}
-            {activeId !== hostChatId && <ShareLink eventId={eventId} chatId={activeId} />}
+            {activeId !== hostChatId && (
+              <ShareLink key={activeId} eventId={eventId} chatId={activeId} />
+            )}
           </aside>
         )}
       </div>

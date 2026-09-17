@@ -16,12 +16,6 @@ export function ShareLink({ eventId, chatId }: { eventId: string; chatId: string
   // a manual copy rather than the link.
   const [clipboardFailed, setClipboardFailed] = useState(false);
 
-  // A fresh link is a fresh button: don't carry "Copied" across a switch.
-  useEffect(() => {
-    setCopied(false);
-    setClipboardFailed(false);
-  }, [url]);
-
   useEffect(() => {
     if (!copied) return;
     const timer = setTimeout(() => setCopied(false), 2000);

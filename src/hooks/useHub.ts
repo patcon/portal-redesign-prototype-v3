@@ -1,4 +1,4 @@
-import { useRef } from "react";
+import { useEffect, useRef } from "react";
 import { useAgent } from "agents/react";
 import { CHATS_CHANGED } from "../shared";
 import type { HubApi } from "../types";
@@ -11,7 +11,9 @@ import type { HubApi } from "../types";
  */
 export function useHub(eventId: string, onChatsChanged?: () => void) {
   const changed = useRef(onChatsChanged);
-  changed.current = onChatsChanged;
+  useEffect(() => {
+    changed.current = onChatsChanged;
+  });
   const hub = useAgent({
     agent: "project-hub",
     name: eventId,
