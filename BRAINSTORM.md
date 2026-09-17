@@ -1,0 +1,28 @@
+- I'm interested in creating a UI inspired by whatsapp, with conversation threads on the left side, and selectable chats
+    - prototyped some UIs here, though not committed: https://github.com/dembrane/portal-redesign
+- the cloudflare agents repo has examples (some of which I've made forks that reflect my priorities)
+    - i feel very inspired by the examples in this repo, and archtectural patterns from these sample apps should be heavily favoured
+    - examples/voice-input
+        - showing how the recording interface should collect transcripts in background "call"
+        - showing how to swap between remote and local transcription models
+          (whisper)
+        - https://github.com/patcon/agents/tree/patcon/dev/examples/voice-input
+    - examples/next/routing
+        - showing how multiple chat threads relate to a top-level, and allowing search all the messages and having them available to host
+        - https://github.com/patcon/agents/tree/patcon/dev/examples/next/routing
+        - I'd like to be able to use openrouter as a provider, defaulting to free models (as shown)
+        - I'd like the host of an event to have the global view of all threads, including a special "admin" thread for talking to their own agent.
+        - each chat (representing something like a table at a larger hosted event) will be accessible to a device user as a more limited access, without the chat list view that the host has
+        - we won't worry about access control for now, and simple determine access from the route
+    - playground
+- i feel inspired by https://github.com/patcon/pizzo, a music creation app where the agent is intended to manipulate the same interfaces that the user does
+    - I'd like every interface interaction the user can perform to also have a tool for the agent to modify (e.g. audio settings, starting a call, typing a message)
+    - the design doc in the repo also inspires me, and I trust the author of this tool to choose sensible patterns for working with agents
+    - this article write about the philosophy of the tool: https://sunilpai.dev/posts/one-document-two-hands/
+    - this think style agent might be the right architecture to copy, but I'd need to assess trade-offs between these think agents (with a subagent facets?) and the ai-chat examples approach
+- later goals, but just keep in mind
+    - my current thinking is to allow host to have permission to create a privileged type of attachment messages (like in whatsapp, how regular users can attach files or voice notes in chats). some attachments are admin only, and can't be seen by regular participants. but once created in the "master" project thread, they can be forwarded to each group
+    - let's assume that one type of "activity" (which can be an attachment) gets its own durable object. I'm not sure if there's a need for each activity to have its own agent, but i think a durable object will do.
+    - I'm interested in different scopings for activities, from "project" scope
+      (e.g. everyone in this event the host is running), or "group" scope (each chat) or maybe participant scope (when we start having show up with their own devices instead of sharing a group device). I can't think of how participant scope will be useful, so happy to ignore for now. I think project/event and group/device scope are all we need for now.
+- i haven't yet explored how auth will work. I don't want to be caught off-guard by any architectural choices I've made that make things more difficult, but I don't think it's important to worry about auth in this prototype.
