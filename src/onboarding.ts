@@ -34,7 +34,9 @@ any wording — never make someone repeat themselves because of formatting.
    to confirm they consent to being recorded before going any further. If they
    decline, stop and tell them the host can take their input another way.
 5. Ask what to call this table, so the host can tell the tables apart. Examples
-   like "Group 1" or "Kitchen table" are fine.
+   like "Group 1" or "Kitchen table" are fine. As soon as they answer, call
+   the \`setTableName\` tool with the name. If they rename the table later, call
+   it again.
 6. Microphone check — "Let's Make Sure We Can Hear You." Tell them to press the
    record button when ready.
 7. Ready to Begin? — confirm they are set up, restate the table name, and stop

@@ -126,8 +126,16 @@ function messageText(message: UIMessage): string {
     .trim();
 }
 
+/**
+ * A table's synced state. Agent state reaches every connected client, so the
+ * table's own screen shows its name the moment the agent sets it.
+ */
+type TableState = { name: string | null };
+
 /** One Durable Object per table, reached only through its owning event hub. */
-export class GroupChat extends ChatAgent<Env> {
+export class GroupChat extends ChatAgent<Env, TableState> {
+  initialState: TableState = { name: null };
+
   /** Bounded so a long event cannot grow one table's turn without limit. */
   maxPersistedMessages = 200;
 
@@ -166,11 +174,33 @@ export class GroupChat extends ChatAgent<Env> {
       model: getModel(this.env, { sessionAffinity: this.sessionAffinity }),
       system: isHost ? HOST_INSTRUCTIONS : ONBOARDING_INSTRUCTIONS,
       messages: await convertToModelMessages(this.messages),
-      ...(isHost && owner && { tools: this.#hostTools(owner.eventId) }),
+      tools: isHost && owner ? this.#hostTools(owner.eventId) : this.#tableTools(),
       // Room for a tool call and the answer that reads its result.
       stopWhen: stepCountIs(5)
     });
     return result.toUIMessageStreamResponse();
+  }
+
+  /** A table names itself during onboarding; the host sees the name. */
+  #tableTools() {
+    return {
+      setTableName: tool({
+        description:
+          "Set this table's name, so the host can tell the tables apart. Call it as soon as the participants say what to call their table.",
+        inputSchema: jsonSchema<{ name: string }>({
+          type: "object",
+          properties: { name: { type: "string", maxLength: 60 } },
+          required: ["name"]
+        }),
+        execute: async ({ name }) => {
+          const trimmed = name.trim().slice(0, 60);
+          if (!trimmed) return { ok: false, error: "name is empty" };
+          this.setState({ ...this.state, name: trimmed });
+          await this.#pushToHub();
+          return { ok: true, name: trimmed };
+        }
+      })
+    };
   }
 
   /**
@@ -270,9 +300,12 @@ export class GroupChat extends ChatAgent<Env> {
     try {
       const hub = this.env.ProjectHub.getByName(owner.eventId);
       await hub.recordChatActivity(owner.chatId, {
-        title: firstFromParticipant
-          ? messageText(firstFromParticipant).slice(0, 80)
-          : null,
+        // The name the table chose, once it has one; until then, its first words.
+        title:
+          this.state.name ??
+          (firstFromParticipant
+            ? messageText(firstFromParticipant).slice(0, 80)
+            : null),
         lastMessage: latest ? messageText(latest).slice(0, 120) : null,
         transcript:
           (await this.ctx.storage.get<string>("transcript")) ?? null,

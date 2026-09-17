@@ -126,23 +126,26 @@ function JoinCode({ eventId }: { eventId: string }) {
 function ChatPane({
   eventId,
   chatId,
-  onActivity
+  onActivity,
+  onName
 }: {
   eventId: string;
   chatId: string;
   onActivity?: () => void;
+  onName?: (name: string | null) => void;
 }) {
   // One WebSocket per open chat. The upgrade goes through the event hub,
   // which resolves the chat ID; the chat's own DO then owns the socket,
   // so the hub is not on the message path.
   const basePath = `agents/project-hub/${encodeURIComponent(eventId)}/chats/${encodeURIComponent(chatId)}`;
-  const agent = useAgent({
+  const agent = useAgent<{ name: string | null }>({
     agent: "group-chat",
     // Ignored for the URL, which `basePath` sets, but `useAgentChat` keys its
     // message cache by agent and name. Without it every routed chat is
     // "default", and switching chats keeps showing the first one opened.
     name: chatId,
-    basePath
+    basePath,
+    onStateUpdate: (state) => onName?.(state.name)
   });
   const call = useCall(basePath);
   const { messages, sendMessage, status } = useAgentChat({
@@ -451,14 +454,15 @@ function HostView({ eventId }: { eventId: string }) {
 
 /** One table's device: its own chat, and nothing else. */
 function GroupView({ eventId, chatId }: { eventId: string; chatId: string }) {
+  const [name, setName] = useState<string | null>(null);
   return (
     <div className="flex h-screen flex-col">
       <header className="flex items-center justify-between border-b border-kumo-line px-4 py-3">
-        <Text bold>Table {chatId.slice(0, 8)}</Text>
+        <Text bold>{name ?? `Table ${chatId.slice(0, 8)}`}</Text>
         <ModeToggle />
       </header>
       <main className="flex min-h-0 flex-1 flex-col">
-        <ChatPane eventId={eventId} chatId={chatId} />
+        <ChatPane eventId={eventId} chatId={chatId} onName={setName} />
       </main>
     </div>
   );
