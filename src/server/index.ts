@@ -14,9 +14,6 @@ export default {
     // Routes both /agents/project-hub/{user} and the forwarded
     // /agents/project-hub/{user}/chats/{id}/... paths: RoutedAgents claims the
     // latter from inside the hub once the request reaches it.
-    return (
-      (await routeAgentRequest(request, env)) ??
-      new Response("Not found", { status: 404 })
-    );
-  }
+    return (await routeAgentRequest(request, env)) ?? new Response("Not found", { status: 404 });
+  },
 } satisfies ExportedHandler<Env>;

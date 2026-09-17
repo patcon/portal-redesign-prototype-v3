@@ -24,7 +24,7 @@ export function useHub(eventId: string, onChatsChanged?: () => void) {
       } catch {
         // Not ours: the SDK's own frames are handled before this.
       }
-    }
+    },
   });
   return { hub, api: hub.stub as HubApi };
 }

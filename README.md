@@ -16,11 +16,11 @@ Kimi K2 through the AI binding, no keys) or `openrouter` (needs
 Conversation calls are transcribed by the provider named in `STT_PROVIDER`
 (`.dev.vars`; see `.dev.vars.sample` and `src/server/stt/`):
 
-| `STT_PROVIDER` | Runs on | Trade-off |
-|---|---|---|
+| `STT_PROVIDER`    | Runs on                     | Trade-off                                                                                                                                                                |
+| ----------------- | --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `nova3` (default) | Workers AI, Deepgram Nova 3 | Best quality, live interim text. Under `vite dev` its WebSocket goes through the AI binding's remote proxy, which has failed mid-session ("did not return a WebSocket"). |
-| `flux` | Workers AI, Deepgram Flux | Same WebSocket path and caveat as `nova3`. |
-| `whisper-local` | whisperfile on this machine | Offline, no Cloudflare calls. Lower quality, no interim text; an utterance lands after ~800ms of silence. |
+| `flux`            | Workers AI, Deepgram Flux   | Same WebSocket path and caveat as `nova3`.                                                                                                                               |
+| `whisper-local`   | whisperfile on this machine | Offline, no Cloudflare calls. Lower quality, no interim text; an utterance lands after ~800ms of silence.                                                                |
 
 To use `whisper-local`:
 
@@ -52,22 +52,20 @@ ProjectHub "alice" (plain DurableObject)      GroupChat (one per chat, opaque na
    read and write ONLY the hub                 owns its WebSocket
 ```
 
-| URL                                          | Handled by                                  |
-| -------------------------------------------- | ------------------------------------------- |
+| URL                                             | Handled by                                     |
+| ----------------------------------------------- | ---------------------------------------------- |
 | `/agents/project-hub/alice`                     | `ProjectHub` "alice", JSON view of the catalog |
-| `/agents/project-hub/alice/chats/{id}`          | the `GroupChat` behind that entry           |
-| `/agents/project-hub/alice/chats/{id}/messages` | same `GroupChat`, sees the path `/messages` |
+| `/agents/project-hub/alice/chats/{id}`          | the `GroupChat` behind that entry              |
+| `/agents/project-hub/alice/chats/{id}/messages` | same `GroupChat`, sees the path `/messages`    |
 
 ```ts
 export class ProjectHub extends DurableObject<Env> {
   readonly chats = new RoutedAgents<GroupChat, ChatMeta>({
     namespace: this.env.GroupChat,
-    route: "chats"
+    route: "chats",
   });
   readonly webSockets = new WebSockets({ callables: new HubCallables(this) });
-  readonly lifecycle = Lifecycle.install(this)
-    .use(this.chats)
-    .use(this.webSockets);
+  readonly lifecycle = Lifecycle.install(this).use(this.chats).use(this.webSockets);
 }
 ```
 

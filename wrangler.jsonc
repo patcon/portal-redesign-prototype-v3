@@ -6,25 +6,25 @@
   "compatibility_flags": ["nodejs_compat"],
   "assets": {
     "not_found_handling": "single-page-application",
-    "run_worker_first": ["/agents/*"]
+    "run_worker_first": ["/agents/*"],
   },
   "durable_objects": {
     "bindings": [
       {
         "name": "ProjectHub",
-        "class_name": "ProjectHub"
+        "class_name": "ProjectHub",
       },
       {
         "name": "GroupChat",
-        "class_name": "GroupChat"
-      }
-    ]
+        "class_name": "GroupChat",
+      },
+    ],
   },
   "migrations": [
     {
       "tag": "v1",
-      "new_sqlite_classes": ["ProjectHub", "GroupChat"]
-    }
+      "new_sqlite_classes": ["ProjectHub", "GroupChat"],
+    },
   ],
   // Speech-to-text provider: nova3 | flux | whisper-local. See src/server/stt/.
   "vars": {
@@ -32,12 +32,12 @@
     "OPENROUTER_MODEL": "",
     "WORKERS_AI_MODEL": "",
     "STT_PROVIDER": "nova3",
-    "STT_WHISPER_URL": ""
+    "STT_WHISPER_URL": "",
   },
   "ai": {
-    "binding": "AI"
+    "binding": "AI",
   },
   "observability": {
-    "enabled": true
-  }
+    "enabled": true,
+  },
 }

@@ -8,5 +8,5 @@ export default defineConfig({
   plugins: [agents(), react(), cloudflare(), tailwindcss()],
   // `agents` is linked from the monorepo checkout, so `agents/react` would
   // otherwise resolve React through that tree and give the app two copies.
-  resolve: { dedupe: ["react", "react-dom"] }
+  resolve: { dedupe: ["react", "react-dom"] },
 });

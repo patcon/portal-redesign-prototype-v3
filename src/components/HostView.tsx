@@ -1,11 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import {
-  Badge,
-  Button,
-  Input,
-  PoweredByCloudflare,
-  Text
-} from "@cloudflare/kumo";
+import { Badge, Button, Input, PoweredByCloudflare, Text } from "@cloudflare/kumo";
 import { PlusIcon, TrashIcon } from "@phosphor-icons/react";
 import { useHub } from "../hooks/useHub";
 import type { ChatEntry } from "../types";
@@ -30,9 +24,7 @@ export function HostView({ eventId }: { eventId: string }) {
 
   const refreshChats = useCallback(async () => {
     const needle = query.trim();
-    setChats(
-      needle === "" ? await api.listChats() : await api.searchChats(needle)
-    );
+    setChats(needle === "" ? await api.listChats() : await api.searchChats(needle));
   }, [api, query]);
   refresh.current = () => void refreshChats();
 
@@ -56,7 +48,7 @@ export function HostView({ eventId }: { eventId: string }) {
       if (activeId === chatId) setActiveId(null);
       await refreshChats();
     },
-    [activeId, api, refreshChats]
+    [activeId, api, refreshChats],
   );
 
   // The host's own thread is in the catalog like any other chat; it just
@@ -178,9 +170,7 @@ export function HostView({ eventId }: { eventId: string }) {
           <aside className="flex w-64 flex-col overflow-y-auto border-l border-kumo-line">
             <JoinCode eventId={eventId} />
             {/* The host's own thread is nobody else's to open. */}
-            {activeId !== hostChatId && (
-              <ShareLink eventId={eventId} chatId={activeId} />
-            )}
+            {activeId !== hostChatId && <ShareLink eventId={eventId} chatId={activeId} />}
           </aside>
         )}
       </div>

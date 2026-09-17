@@ -20,11 +20,7 @@
  * noticeably worse than the hosted model; that's expected for this use case.
  */
 
-import type {
-  Transcriber,
-  TranscriberSession,
-  TranscriberSessionOptions
-} from "agents/voice";
+import type { Transcriber, TranscriberSession, TranscriberSessionOptions } from "agents/voice";
 
 export interface LocalWhisperfileSTTOptions {
   /** whisper.cpp server inference endpoint. @default "http://localhost:8080/inference" */
@@ -44,7 +40,7 @@ const DEFAULTS: Required<LocalWhisperfileSTTOptions> = {
   sampleRate: 16000,
   silenceMs: 800,
   minUtteranceMs: 300,
-  energyThreshold: 0.02
+  energyThreshold: 0.02,
 };
 
 /**
@@ -74,10 +70,7 @@ class LocalWhisperSession implements TranscriberSession {
   #hasSpeech = false;
   #silenceSamples = 0;
 
-  constructor(
-    opts: Required<LocalWhisperfileSTTOptions>,
-    options?: TranscriberSessionOptions
-  ) {
+  constructor(opts: Required<LocalWhisperfileSTTOptions>, options?: TranscriberSessionOptions) {
     this.#opts = opts;
     this.#onUtterance = options?.onUtterance;
     this.#onFatalError = options?.onFatalError;
@@ -135,9 +128,7 @@ class LocalWhisperSession implements TranscriberSession {
 
     this.#transcribe(merged).catch((error) => {
       if (this.#closed) return;
-      this.#onFatalError?.(
-        error instanceof Error ? error : new Error(String(error))
-      );
+      this.#onFatalError?.(error instanceof Error ? error : new Error(String(error)));
     });
   }
 

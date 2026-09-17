@@ -2,13 +2,7 @@ import { callable, type Connection } from "agents";
 import { withVoiceInput } from "agents/voice";
 import { AIChatAgent } from "@cloudflare/ai-chat";
 import type { UIMessage } from "ai";
-import {
-  convertToModelMessages,
-  jsonSchema,
-  stepCountIs,
-  streamText,
-  tool
-} from "ai";
+import { convertToModelMessages, jsonSchema, stepCountIs, streamText, tool } from "ai";
 import { getModel } from "./model";
 import { getTranscriber } from "./stt";
 import { ONBOARDING_INSTRUCTIONS, WELCOME_MESSAGE } from "./prompts/onboarding";
@@ -19,16 +13,14 @@ import type { ChatMeta, ChatOwner, ConversationState } from "../types";
 const TRANSCRIPT_EXCERPT = 600;
 
 /** A conversation as the host's tools see it: the hub's pushed metadata. */
-function describeConversations(
-  entries: readonly { id: string; metadata: ChatMeta | null }[]
-) {
+function describeConversations(entries: readonly { id: string; metadata: ChatMeta | null }[]) {
   return entries
     .filter((entry) => entry.metadata?.kind !== "host")
     .map((entry, index) => ({
       conversation: index + 1,
       title: entry.metadata?.title ?? null,
       lastMessage: entry.metadata?.lastMessage ?? null,
-      recentCallTranscript: entry.metadata?.transcript ?? null
+      recentCallTranscript: entry.metadata?.transcript ?? null,
     }));
 }
 
@@ -78,10 +70,10 @@ export class GroupChat extends ChatAgent<Env, ConversationState> {
         parts: [
           {
             type: "text",
-            text: owner.kind === "host" ? HOST_WELCOME_MESSAGE : WELCOME_MESSAGE
-          }
-        ]
-      }
+            text: owner.kind === "host" ? HOST_WELCOME_MESSAGE : WELCOME_MESSAGE,
+          },
+        ],
+      },
     ]);
   }
 
@@ -92,12 +84,9 @@ export class GroupChat extends ChatAgent<Env, ConversationState> {
       model: getModel(this.env, { sessionAffinity: this.sessionAffinity }),
       system: isHost ? HOST_INSTRUCTIONS : ONBOARDING_INSTRUCTIONS,
       messages: await convertToModelMessages(this.messages),
-      tools:
-        isHost && owner
-          ? this.#hostTools(owner.eventId)
-          : this.#conversationTools(),
+      tools: isHost && owner ? this.#hostTools(owner.eventId) : this.#conversationTools(),
       // Room for a tool call and the answer that reads its result.
-      stopWhen: stepCountIs(5)
+      stopWhen: stepCountIs(5),
     });
     return result.toUIMessageStreamResponse();
   }
@@ -111,7 +100,7 @@ export class GroupChat extends ChatAgent<Env, ConversationState> {
         inputSchema: jsonSchema<{ name: string }>({
           type: "object",
           properties: { name: { type: "string", maxLength: 60 } },
-          required: ["name"]
+          required: ["name"],
         }),
         execute: async ({ name }) => {
           const trimmed = name.trim().slice(0, 60);
@@ -119,7 +108,7 @@ export class GroupChat extends ChatAgent<Env, ConversationState> {
           this.setState({ ...this.state, name: trimmed });
           await this.#pushToHub();
           return { ok: true, name: trimmed };
-        }
+        },
       }),
       setParticipantCount: tool({
         description:
@@ -127,7 +116,7 @@ export class GroupChat extends ChatAgent<Env, ConversationState> {
         inputSchema: jsonSchema<{ count: number }>({
           type: "object",
           properties: { count: { type: "integer", minimum: 1, maximum: 100 } },
-          required: ["count"]
+          required: ["count"],
         }),
         execute: async ({ count }) => {
           const participants = Math.round(count);
@@ -136,8 +125,8 @@ export class GroupChat extends ChatAgent<Env, ConversationState> {
           }
           this.setState({ ...this.state, participants });
           return { ok: true, participants };
-        }
-      })
+        },
+      }),
     };
   }
 
@@ -153,9 +142,9 @@ export class GroupChat extends ChatAgent<Env, ConversationState> {
           "List every conversation in the event with its latest message and the tail of its most recent voice call.",
         inputSchema: jsonSchema<Record<string, never>>({
           type: "object",
-          properties: {}
+          properties: {},
         }),
-        execute: async () => describeConversations(await hub.listChats())
+        execute: async () => describeConversations(await hub.listChats()),
       }),
       searchConversations: tool({
         description:
@@ -163,11 +152,10 @@ export class GroupChat extends ChatAgent<Env, ConversationState> {
         inputSchema: jsonSchema<{ query: string }>({
           type: "object",
           properties: { query: { type: "string" } },
-          required: ["query"]
+          required: ["query"],
         }),
-        execute: async ({ query }) =>
-          describeConversations(await hub.searchChats(query))
-      })
+        execute: async ({ query }) => describeConversations(await hub.searchChats(query)),
+      }),
     };
   }
 
@@ -180,10 +168,7 @@ export class GroupChat extends ChatAgent<Env, ConversationState> {
     const utterances = this.#calls.get(connection.id) ?? [];
     utterances.push(text);
     this.#calls.set(connection.id, utterances);
-    await this.ctx.storage.put(
-      "transcript",
-      utterances.join(" ").slice(-TRANSCRIPT_EXCERPT)
-    );
+    await this.ctx.storage.put("transcript", utterances.join(" ").slice(-TRANSCRIPT_EXCERPT));
     await this.#pushToHub();
   }
 
@@ -203,10 +188,8 @@ export class GroupChat extends ChatAgent<Env, ConversationState> {
         id: crypto.randomUUID(),
         role: "user",
         metadata: { kind: "voice-call" },
-        parts: [
-          { type: "text", text: `Voice call transcript:\n${utterances.join(" ")}` }
-        ]
-      }
+        parts: [{ type: "text", text: `Voice call transcript:\n${utterances.join(" ")}` }],
+      },
     ]);
     await this.#pushToHub();
   }
@@ -230,8 +213,7 @@ export class GroupChat extends ChatAgent<Env, ConversationState> {
     const firstFromParticipant = this.messages.find(
       (message) =>
         message.role === "user" &&
-        (message.metadata as { kind?: string } | undefined)?.kind !==
-          "voice-call"
+        (message.metadata as { kind?: string } | undefined)?.kind !== "voice-call",
     );
     const latest = this.messages.at(-1);
 
@@ -241,13 +223,10 @@ export class GroupChat extends ChatAgent<Env, ConversationState> {
         // The name the conversation chose, if any; until then, its first words.
         title:
           this.state.name ??
-          (firstFromParticipant
-            ? messageText(firstFromParticipant).slice(0, 80)
-            : null),
+          (firstFromParticipant ? messageText(firstFromParticipant).slice(0, 80) : null),
         lastMessage: latest ? messageText(latest).slice(0, 120) : null,
-        transcript:
-          (await this.ctx.storage.get<string>("transcript")) ?? null,
-        seq
+        transcript: (await this.ctx.storage.get<string>("transcript")) ?? null,
+        seq,
       });
     } catch (error) {
       console.warn("[GroupChat] owner update failed", error);

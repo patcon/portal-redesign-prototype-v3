@@ -8,17 +8,8 @@ import { absoluteHrefFor } from "../router";
  * The event's QR code always makes a *new* conversation, so without this there
  * is no way back to one that already exists.
  */
-export function ShareLink({
-  eventId,
-  chatId
-}: {
-  eventId: string;
-  chatId: string;
-}) {
-  const url = absoluteHrefFor(
-    { name: "group", eventId, chatId },
-    location.origin
-  );
+export function ShareLink({ eventId, chatId }: { eventId: string; chatId: string }) {
+  const url = absoluteHrefFor({ name: "group", eventId, chatId }, location.origin);
   const [copied, setCopied] = useState(false);
   // Clipboard access needs a secure context, which a LAN address over plain
   // HTTP is not. The link is on screen either way, so a refusal costs the host

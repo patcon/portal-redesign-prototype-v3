@@ -20,16 +20,14 @@ export function getTranscriber(env: Env): Transcriber {
   switch (provider) {
     case "whisper-local":
       return new LocalWhisperfileSTT(
-        env.STT_WHISPER_URL ? { url: String(env.STT_WHISPER_URL) } : undefined
+        env.STT_WHISPER_URL ? { url: String(env.STT_WHISPER_URL) } : undefined,
       );
     case "flux":
       return new WorkersAIFluxSTT(env.AI);
     case "nova3":
       return new WorkersAINova3STT(env.AI);
     default:
-      throw new Error(
-        `Unknown STT_PROVIDER "${provider}"; use nova3, flux, or whisper-local`
-      );
+      throw new Error(`Unknown STT_PROVIDER "${provider}"; use nova3, flux, or whisper-local`);
   }
 }
 

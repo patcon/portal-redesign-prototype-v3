@@ -82,19 +82,17 @@ export class ProjectHub extends DurableObject<Env> {
     namespace: this.env.GroupChat,
     // Claims every `/chats/{id}/...` path under this hub before any
     // other capability or onRequest sees it.
-    route: "chats"
+    route: "chats",
   });
 
   readonly webSockets = new WebSockets({
-    callables: new HubCallables(this)
+    callables: new HubCallables(this),
   });
 
   // RoutedAgents is installed first so a forwarded upgrade under
   // `/chats/{id}` reaches the chat; only the hub's own upgrades fall
   // through to the WebSockets capability.
-  readonly lifecycle = Lifecycle.install(this)
-    .use(this.chats)
-    .use(this.webSockets);
+  readonly lifecycle = Lifecycle.install(this).use(this.chats).use(this.webSockets);
 
   async createChat(kind: ChatKind = "group"): Promise<string> {
     const { id } = await this.chats.create({
@@ -103,8 +101,8 @@ export class ProjectHub extends DurableObject<Env> {
         title: null,
         lastMessage: null,
         transcript: null,
-        seq: 0
-      }
+        seq: 0,
+      },
     });
     try {
       // get() resolves the entry to an initialized, typed stub for RPC.
@@ -130,9 +128,7 @@ export class ProjectHub extends DurableObject<Env> {
    */
   ensureHostThread(): Promise<string> {
     return this.ctx.blockConcurrencyWhile(async () => {
-      const existing = (await this.chats.list()).find(
-        (entry) => entry.metadata?.kind === "host"
-      );
+      const existing = (await this.chats.list()).find((entry) => entry.metadata?.kind === "host");
       return existing ? existing.id : this.createChat("host");
     });
   }
@@ -155,14 +151,9 @@ export class ProjectHub extends DurableObject<Env> {
    * before either writes, and the fence would compare against a value
    * that's already stale by the time the later one applies.
    */
-  recordChatActivity(
-    chatId: string,
-    meta: Omit<ChatMeta, "kind">
-  ): Promise<boolean> {
+  recordChatActivity(chatId: string, meta: Omit<ChatMeta, "kind">): Promise<boolean> {
     return this.ctx.blockConcurrencyWhile(async () => {
-      const current = (await this.chats.list()).find(
-        (entry) => entry.id === chatId
-      );
+      const current = (await this.chats.list()).find((entry) => entry.id === chatId);
       if (!current || (current.metadata?.seq ?? 0) >= meta.seq) {
         return false;
       }
@@ -170,7 +161,7 @@ export class ProjectHub extends DurableObject<Env> {
       // a chat's push — which cannot know it — erase it.
       const updated = await this.chats.setMetadata(chatId, {
         ...meta,
-        kind: current.metadata?.kind ?? "group"
+        kind: current.metadata?.kind ?? "group",
       });
       if (updated) this.#announceChatsChanged();
       return updated;
@@ -199,8 +190,8 @@ export class ProjectHub extends DurableObject<Env> {
     const needle = query.toLowerCase();
     return (await this.chats.list()).filter(({ metadata }) =>
       [metadata?.title, metadata?.lastMessage, metadata?.transcript].some((value) =>
-        value?.toLowerCase().includes(needle)
-      )
+        value?.toLowerCase().includes(needle),
+      ),
     );
   }
 
@@ -223,7 +214,7 @@ export class ProjectHub extends DurableObject<Env> {
       event: this.lifecycle.name,
       model: modelLabel(this.env),
       stt: sttLabel(this.env),
-      chats: await this.chats.list()
+      chats: await this.chats.list(),
     });
   }
 }

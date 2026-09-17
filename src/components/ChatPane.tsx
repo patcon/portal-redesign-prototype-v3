@@ -5,7 +5,7 @@ import {
   ChatCircleIcon,
   MicrophoneIcon,
   PaperPlaneRightIcon,
-  StopIcon
+  StopIcon,
 } from "@phosphor-icons/react";
 import { useAgent } from "agents/react";
 import { useAgentChat } from "@cloudflare/ai-chat/react";
@@ -22,7 +22,7 @@ export function ChatPane({
   eventId,
   chatId,
   onActivity,
-  onState
+  onState,
 }: {
   eventId: string;
   chatId: string;
@@ -40,12 +40,12 @@ export function ChatPane({
     // "default", and switching chats keeps showing the first one opened.
     name: chatId,
     basePath,
-    onStateUpdate: (state) => onState?.(state)
+    onStateUpdate: (state) => onState?.(state),
   });
   const call = useCall(basePath);
   const { messages, sendMessage, status } = useAgentChat({
     agent,
-    experimental_throttle: 100
+    experimental_throttle: 100,
   });
   const [draft, setDraft] = useState("");
   const isStreaming = status === "streaming" || status === "submitted";
@@ -73,7 +73,7 @@ export function ChatPane({
       setDraft("");
       sendMessage({ role: "user", parts: [{ type: "text", text }] });
     },
-    [draft, isStreaming, sendMessage]
+    [draft, isStreaming, sendMessage],
   );
 
   return (
@@ -92,8 +92,7 @@ export function ChatPane({
               .join("");
             if (!text) return null;
             const isCall =
-              (message.metadata as { kind?: string } | undefined)?.kind ===
-              "voice-call";
+              (message.metadata as { kind?: string } | undefined)?.kind === "voice-call";
             return (
               <div
                 key={message.id}
@@ -109,9 +108,7 @@ export function ChatPane({
                       <Text size="xs" variant="secondary">
                         🎙️ Voice call
                       </Text>
-                      <Text size="sm">
-                        {text.replace(/^Voice call transcript:\n/, "")}
-                      </Text>
+                      <Text size="sm">{text.replace(/^Voice call transcript:\n/, "")}</Text>
                     </>
                   ) : (
                     <Text size="sm">{text}</Text>
@@ -145,10 +142,7 @@ export function ChatPane({
           </Text>
         </div>
       )}
-      <form
-        onSubmit={send}
-        className="flex gap-2 border-t border-kumo-line p-3"
-      >
+      <form onSubmit={send} className="flex gap-2 border-t border-kumo-line p-3">
         <Input
           value={draft}
           aria-label="Message"
@@ -162,9 +156,7 @@ export function ChatPane({
           shape="square"
           aria-label={call.inCall ? "End call" : "Start call"}
           onClick={call.inCall ? call.stop : call.start}
-          icon={
-            call.inCall ? <StopIcon size={16} /> : <MicrophoneIcon size={16} />
-          }
+          icon={call.inCall ? <StopIcon size={16} /> : <MicrophoneIcon size={16} />}
         />
         <Button
           type="submit"

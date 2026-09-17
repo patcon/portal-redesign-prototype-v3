@@ -35,10 +35,7 @@ function openRouterModel(env: Env): string {
   return String(env.OPENROUTER_MODEL || DEFAULT_OPENROUTER_MODEL);
 }
 
-export function getModel(
-  env: Env,
-  options?: { sessionAffinity?: string }
-): LanguageModel {
+export function getModel(env: Env, options?: { sessionAffinity?: string }): LanguageModel {
   if (provider(env) === "openrouter") {
     const openrouter = createOpenRouter({ apiKey: env.OPENROUTER_API_KEY });
     return openrouter(openRouterModel(env));
@@ -46,7 +43,7 @@ export function getModel(
 
   const workersai = createWorkersAI({ binding: env.AI });
   return workersai(workersAIModel(env), {
-    sessionAffinity: options?.sessionAffinity
+    sessionAffinity: options?.sessionAffinity,
   });
 }
 

@@ -36,15 +36,15 @@ class RoutedVoiceTransport implements VoiceTransport {
     const socket = new AgentClient({
       agent: "group-chat",
       basePath: this.basePath,
-      host: location.host
+      host: location.host,
     });
     socket.addEventListener("open", () => this.onopen?.());
     socket.addEventListener("close", (event) =>
       this.onclose?.({
         code: event.code,
         reason: event.reason,
-        wasClean: event.wasClean
-      })
+        wasClean: event.wasClean,
+      }),
     );
     socket.addEventListener("error", (event) => this.onerror?.(event));
     socket.addEventListener("message", (event) => this.onmessage?.(event.data));
@@ -72,7 +72,7 @@ export function useCall(basePath: string) {
   useEffect(() => {
     const voice = new VoiceClient({
       agent: "group-chat",
-      transport: new RoutedVoiceTransport(basePath)
+      transport: new RoutedVoiceTransport(basePath),
     });
     client.current = voice;
     voice.connect();
@@ -84,11 +84,11 @@ export function useCall(basePath: string) {
           voice.transcript
             .filter((message) => message.role === "user")
             .map((message) => message.text)
-            .join(" ")
+            .join(" "),
         ),
       interimtranscript: () => setInterim(voice.interimTranscript),
       audiolevelchange: () => setLevel(voice.audioLevel),
-      error: () => setError(voice.error)
+      error: () => setError(voice.error),
     } as const;
     for (const [name, listener] of Object.entries(sync)) {
       voice.addEventListener(name as keyof typeof sync, listener);

@@ -1,9 +1,9 @@
 {
   "name": "portal-redesign-prototype-v3",
-  "description": "Dembrane participant portal, rebuilt on Cloudflare Agents: one Durable Object per group chat, routed by a per-event hub.",
-  "private": true,
-  "type": "module",
   "version": "0.0.0",
+  "private": true,
+  "description": "Dembrane participant portal, rebuilt on Cloudflare Agents: one Durable Object per group chat, routed by a per-event hub.",
+  "type": "module",
   "scripts": {
     "start": "vite dev --host",
     "deploy": "vite build && wrangler deploy",

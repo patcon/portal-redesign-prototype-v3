@@ -4,9 +4,7 @@ import { MoonIcon, SunIcon } from "@phosphor-icons/react";
 
 /** Light/dark switch, remembered per browser. */
 export function ModeToggle() {
-  const [mode, setMode] = useState(
-    () => localStorage.getItem("theme") ?? "light"
-  );
+  const [mode, setMode] = useState(() => localStorage.getItem("theme") ?? "light");
 
   useEffect(() => {
     document.documentElement.setAttribute("data-mode", mode);

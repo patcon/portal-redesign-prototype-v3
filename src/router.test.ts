@@ -5,18 +5,18 @@ describe("parseRoute", () => {
   it("reads the join link", () => {
     expect(parseRoute("/events/abc123")).toEqual({
       name: "join",
-      eventId: "abc123"
+      eventId: "abc123",
     });
     expect(parseRoute("/events/abc123/")).toEqual({
       name: "join",
-      eventId: "abc123"
+      eventId: "abc123",
     });
   });
 
   it("reads the host console", () => {
     expect(parseRoute("/events/abc123/secret")).toEqual({
       name: "host",
-      eventId: "abc123"
+      eventId: "abc123",
     });
   });
 
@@ -24,7 +24,7 @@ describe("parseRoute", () => {
     expect(parseRoute("/events/abc123/group/chat-9")).toEqual({
       name: "group",
       eventId: "abc123",
-      chatId: "chat-9"
+      chatId: "chat-9",
     });
   });
 
@@ -43,10 +43,7 @@ describe("hrefFor", () => {
   const cases: [Route, string][] = [
     [{ name: "join", eventId: "abc123" }, "/events/abc123"],
     [{ name: "host", eventId: "abc123" }, "/events/abc123/secret"],
-    [
-      { name: "group", eventId: "abc123", chatId: "chat-9" },
-      "/events/abc123/group/chat-9"
-    ]
+    [{ name: "group", eventId: "abc123", chatId: "chat-9" }, "/events/abc123/group/chat-9"],
   ];
 
   it.each(cases)("writes %o as %s", (route, href) => {
@@ -67,29 +64,26 @@ describe("absoluteHrefFor", () => {
     expect(
       absoluteHrefFor(
         { name: "group", eventId: "abc123", chatId: "chat-9" },
-        "https://portal.example"
-      )
+        "https://portal.example",
+      ),
     ).toBe("https://portal.example/events/abc123/group/chat-9");
   });
 
   it("works for a LAN origin with a port, which is how an event is run", () => {
-    expect(
-      absoluteHrefFor({ name: "join", eventId: "abc123" }, "http://192.168.1.4:5173")
-    ).toBe("http://192.168.1.4:5173/events/abc123");
+    expect(absoluteHrefFor({ name: "join", eventId: "abc123" }, "http://192.168.1.4:5173")).toBe(
+      "http://192.168.1.4:5173/events/abc123",
+    );
   });
 
   it("still escapes ids that would otherwise change the path", () => {
     expect(
-      absoluteHrefFor(
-        { name: "group", eventId: "a/b", chatId: "c d" },
-        "https://portal.example"
-      )
+      absoluteHrefFor({ name: "group", eventId: "a/b", chatId: "c d" }, "https://portal.example"),
     ).toBe("https://portal.example/events/a%2Fb/group/c%20d");
   });
 
   it("tolerates an origin handed to it with a trailing slash", () => {
-    expect(
-      absoluteHrefFor({ name: "host", eventId: "abc123" }, "https://portal.example/")
-    ).toBe("https://portal.example/events/abc123/secret");
+    expect(absoluteHrefFor({ name: "host", eventId: "abc123" }, "https://portal.example/")).toBe(
+      "https://portal.example/events/abc123/secret",
+    );
   });
 });
