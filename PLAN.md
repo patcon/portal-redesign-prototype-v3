@@ -204,16 +204,31 @@ Each is independently demoable. Whenever we stop, there is something to show.
 ### Slice 0 — Scaffold (~30m)
 
 - Copy `~/repos/dembrane/agents/examples/next/routing` into this directory.
-- **Do not use workspace deps.** Local `agents` is `0.23.0` and
-  `@cloudflare/ai-chat` is `0.12.0`, both identical to npm latest, so replace
-  `"agents": "*"` with `"agents": "^0.23.0"` and add `"@cloudflare/ai-chat":
-  "^0.12.0"`. This project lives outside the monorepo.
+- ~~**Do not use workspace deps.**~~ **Wrong — corrected in flight.** Local
+  `agents` reports `0.23.0` but carries unreleased commits on top of the npm
+  release (notably "WebSockets owns the Agent protocol's state sync and
+  connection flags"). Against published `agents@0.23.0` the hub's WebSocket
+  upgrade returns an empty reply and `createChat` times out. The example only
+  works against the local build, so depend on it directly:
+  `"agents": "link:../agents/packages/agents"` and
+  `"@cloudflare/ai-chat": "link:../agents/packages/ai-chat"`.
+  Three consequences of linking, all handled:
+  - `@babel/plugin-proposal-decorators` must be a local devDependency (the
+    monorepo root was providing it for `@callable()`).
+  - `@types/node` must be a local devDependency (`agents/tsconfig` asks for it).
+  - `vite.config.ts` needs `resolve.dedupe: ["react", "react-dom"]`, or the
+    symlink gives the app two copies of React and `App` throws on `useMemo`.
 - Rename `UserHub` → `ProjectHub`, `ChatAgent` → `GroupChat` (then introduce our
   own `ChatAgent` base in Slice 2). Update `wrangler.jsonc` DO bindings **and**
   the `migrations` tag `v1` `new_sqlite_classes` to match.
 - Add `"ai": { "binding": "AI" }` to `wrangler.jsonc` for Workers AI.
 - `pnpm install && pnpm start`.
+- Removed from the copied example: `src/tests/` (its vitest config reaches
+  back into monorepo-internal scripts) and the `?transport=capnweb` toggle in
+  `client.tsx` (example instrumentation, not something the demo shows).
 - **Done when:** browser loads, a chat can be created, it echoes.
+  ✅ **Verified 2026-09-17 ~04:25** on `localhost:5173`: chat created, message
+  sent, echo returned, sidebar showed the pushed title and last message.
 
 ### Slice 1 — Host thread + QR join (~60m)
 
