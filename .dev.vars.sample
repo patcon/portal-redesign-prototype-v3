@@ -4,3 +4,14 @@
 # Optional: route model calls through OpenRouter instead of Workers AI.
 # Get a key at https://openrouter.ai/keys
 # OPENROUTER_API_KEY=<your-openrouter-api-key>
+
+# Speech-to-text provider for table calls. Default: nova3.
+#   nova3          Workers AI Deepgram Nova 3 — best quality, live interim text.
+#   flux           Workers AI Deepgram Flux — same WebSocket path as nova3.
+#   whisper-local  whisperfile on this machine — offline, no Cloudflare calls,
+#                  lower quality, no interim text. Needs `pnpm stt:setup` once,
+#                  then `pnpm stt:server` running alongside `pnpm start`.
+# Under `vite dev` both Workers AI options go through a remote proxy for the AI
+# binding; if calls fail with "did not return a WebSocket", use whisper-local.
+# STT_PROVIDER=whisper-local
+# STT_WHISPER_URL=http://localhost:8080/inference

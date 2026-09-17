@@ -13,6 +13,9 @@ dist/
 .env
 .env.*
 
+# Local speech-to-text model (pnpm stt:setup)
+.whisperfile/
+
 # Logs
 *.log
 

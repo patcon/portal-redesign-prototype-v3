@@ -4,6 +4,27 @@
 > `?transport=capnweb` toggle, which this prototype removed. Slice 6 replaces
 > this file with the project README and the LOC/dependency numbers.
 
+## Speech-to-text providers
+
+Table calls are transcribed by the provider named in `STT_PROVIDER`
+(`.dev.vars`; see `.dev.vars.sample` and `src/stt.ts`):
+
+| `STT_PROVIDER` | Runs on | Trade-off |
+|---|---|---|
+| `nova3` (default) | Workers AI, Deepgram Nova 3 | Best quality, live interim text. Under `vite dev` its WebSocket goes through the AI binding's remote proxy, which has failed mid-session ("did not return a WebSocket"). |
+| `flux` | Workers AI, Deepgram Flux | Same WebSocket path and caveat as `nova3`. |
+| `whisper-local` | whisperfile on this machine | Offline, no Cloudflare calls. Lower quality, no interim text; an utterance lands after ~800ms of silence. |
+
+To use `whisper-local`:
+
+```bash
+pnpm stt:setup    # once: downloads whisper-tiny.en.llamafile (~90MB) into .whisperfile/
+pnpm stt:server   # leave running alongside `pnpm start`
+```
+
+Changing `.dev.vars` needs a restart of `pnpm start`. The host console header
+shows which model and transcriber are live.
+
 # Next: routing
 
 An early-access example showing `RoutedAgents` from `agents/routing`

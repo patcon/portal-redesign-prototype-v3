@@ -8,7 +8,9 @@
     "start": "vite dev --host",
     "deploy": "vite build && wrangler deploy",
     "typecheck": "tsc --noEmit",
-    "types": "wrangler types env.d.ts --include-runtime false"
+    "types": "wrangler types env.d.ts --include-runtime false",
+    "stt:setup": "bash scripts/setup-local-whisper.sh",
+    "stt:server": "./.whisperfile/whisper-tiny.en.llamafile --server --port 8080 --no-timestamps"
   },
   "dependencies": {
     "@cloudflare/ai-chat": "link:../agents/packages/ai-chat",

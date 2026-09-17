@@ -3,11 +3,12 @@ import { callable, routeAgentRequest, type Connection } from "agents";
 import { Lifecycle } from "agents/lifecycle";
 import { RoutedAgents } from "agents/routing";
 import { WebSockets } from "agents/websockets";
-import { withVoiceInput, WorkersAINova3STT } from "agents/voice";
+import { withVoiceInput } from "agents/voice";
 import { AIChatAgent } from "@cloudflare/ai-chat";
 import type { UIMessage } from "ai";
 import { convertToModelMessages, streamText } from "ai";
 import { getModel, modelLabel } from "./model";
+import { getTranscriber, sttLabel } from "./stt";
 import { ONBOARDING_INSTRUCTIONS, WELCOME_MESSAGE } from "./onboarding";
 import { MAX_QUERY } from "./shared";
 
@@ -108,7 +109,7 @@ export class GroupChat extends ChatAgent<Env> {
   /** Bounded so a long event cannot grow one table's turn without limit. */
   maxPersistedMessages = 200;
 
-  transcriber = new WorkersAINova3STT(this.env.AI);
+  transcriber = getTranscriber(this.env);
 
   /**
    * Utterances of calls in progress, per connection. In memory: an open call
@@ -393,7 +394,7 @@ export class ProjectHub extends DurableObject<Env> {
   /** Which provider chats will actually use — the demo gets asked this. */
   @callable()
   describeModel(): string {
-    return modelLabel(this.env);
+    return `${modelLabel(this.env)} · STT ${sttLabel(this.env)}`;
   }
 
   /** Plain HTTP view of the catalog, for curl. */
@@ -401,6 +402,7 @@ export class ProjectHub extends DurableObject<Env> {
     return Response.json({
       event: this.lifecycle.name,
       model: modelLabel(this.env),
+      stt: sttLabel(this.env),
       chats: await this.chats.list()
     });
   }

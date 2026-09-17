@@ -26,8 +26,10 @@
       "new_sqlite_classes": ["ProjectHub", "GroupChat"]
     }
   ],
-  "secrets": {
-    "required": ["OPENROUTER_API_KEY"]
+  // Speech-to-text provider: nova3 | flux | whisper-local. See src/stt.ts.
+  "vars": {
+    "STT_PROVIDER": "nova3",
+    "STT_WHISPER_URL": ""
   },
   "ai": {
     "binding": "AI"
