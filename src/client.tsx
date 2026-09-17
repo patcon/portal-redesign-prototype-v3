@@ -38,6 +38,9 @@ type ChatEntry = RoutedAgentEntry<{
   seq: number;
 }>;
 
+/** A table's synced agent state, as `GroupChat` defines it. */
+type TableState = { name: string | null; participants: number | null };
+
 type ChatMessage = {
   role: "user" | "assistant";
   text: string;
@@ -142,25 +145,25 @@ function ChatPane({
   eventId,
   chatId,
   onActivity,
-  onName
+  onState
 }: {
   eventId: string;
   chatId: string;
   onActivity?: () => void;
-  onName?: (name: string | null) => void;
+  onState?: (state: TableState) => void;
 }) {
   // One WebSocket per open chat. The upgrade goes through the event hub,
   // which resolves the chat ID; the chat's own DO then owns the socket,
   // so the hub is not on the message path.
   const basePath = `agents/project-hub/${encodeURIComponent(eventId)}/chats/${encodeURIComponent(chatId)}`;
-  const agent = useAgent<{ name: string | null }>({
+  const agent = useAgent<TableState>({
     agent: "group-chat",
     // Ignored for the URL, which `basePath` sets, but `useAgentChat` keys its
     // message cache by agent and name. Without it every routed chat is
     // "default", and switching chats keeps showing the first one opened.
     name: chatId,
     basePath,
-    onStateUpdate: (state) => onName?.(state.name)
+    onStateUpdate: (state) => onState?.(state)
   });
   const call = useCall(basePath);
   const { messages, sendMessage, status } = useAgentChat({
@@ -471,15 +474,26 @@ function HostView({ eventId }: { eventId: string }) {
 
 /** One table's device: its own chat, and nothing else. */
 function GroupView({ eventId, chatId }: { eventId: string; chatId: string }) {
-  const [name, setName] = useState<string | null>(null);
+  const [table, setTable] = useState<TableState | null>(null);
+  // Each scan of the join code is one device, so a table is always one device
+  // however many people share it.
+  const people = table?.participants;
+  const subtitle = people
+    ? `${people} ${people === 1 ? "participant" : "participants"} (1 device)`
+    : "1 device";
   return (
     <div className="flex h-screen flex-col">
       <header className="flex items-center justify-between border-b border-kumo-line px-4 py-3">
-        <Text bold>{name ?? `Table ${chatId.slice(0, 8)}`}</Text>
+        <div className="flex flex-col">
+          <Text bold>{table?.name ?? `Table ${chatId.slice(0, 8)}`}</Text>
+          <Text size="xs" variant="secondary">
+            {subtitle}
+          </Text>
+        </div>
         <ModeToggle />
       </header>
       <main className="flex min-h-0 flex-1 flex-col">
-        <ChatPane eventId={eventId} chatId={chatId} onName={setName} />
+        <ChatPane eventId={eventId} chatId={chatId} onState={setTable} />
       </main>
     </div>
   );

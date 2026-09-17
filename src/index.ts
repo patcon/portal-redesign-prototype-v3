@@ -130,11 +130,11 @@ function messageText(message: UIMessage): string {
  * A table's synced state. Agent state reaches every connected client, so the
  * table's own screen shows its name the moment the agent sets it.
  */
-type TableState = { name: string | null };
+type TableState = { name: string | null; participants: number | null };
 
 /** One Durable Object per table, reached only through its owning event hub. */
 export class GroupChat extends ChatAgent<Env, TableState> {
-  initialState: TableState = { name: null };
+  initialState: TableState = { name: null, participants: null };
 
   /** Bounded so a long event cannot grow one table's turn without limit. */
   maxPersistedMessages = 200;
@@ -149,8 +149,8 @@ export class GroupChat extends ChatAgent<Env, TableState> {
 
   async init(owner: ChatOwner): Promise<void> {
     await this.ctx.storage.put("owner", owner);
-    // The host's thread just says hello. A table's onboarding opens itself: the participant arrives to a question rather
-    // than an empty box. `persistMessages` rather than `saveMessages`,
+    // The host's thread just says hello. A table's onboarding opens itself:
+    // the participant arrives to a question rather than an empty box. `persistMessages` rather than `saveMessages`,
     // because `saveMessages` drives a model turn — which would have the
     // agent answer its own greeting before anyone has typed anything.
     await this.persistMessages([
@@ -198,6 +198,23 @@ export class GroupChat extends ChatAgent<Env, TableState> {
           this.setState({ ...this.state, name: trimmed });
           await this.#pushToHub();
           return { ok: true, name: trimmed };
+        }
+      }),
+      setParticipantCount: tool({
+        description:
+          "Record how many people are taking part at this table: 1 if recording on their own, otherwise the number they give.",
+        inputSchema: jsonSchema<{ count: number }>({
+          type: "object",
+          properties: { count: { type: "integer", minimum: 1, maximum: 100 } },
+          required: ["count"]
+        }),
+        execute: async ({ count }) => {
+          const participants = Math.round(count);
+          if (!(participants >= 1 && participants <= 100)) {
+            return { ok: false, error: "count must be between 1 and 100" };
+          }
+          this.setState({ ...this.state, participants });
+          return { ok: true, participants };
         }
       })
     };
