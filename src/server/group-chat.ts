@@ -166,11 +166,13 @@ export class GroupChat extends ChatAgent<Env, ConversationState> {
   }
 
   onCallStart(connection: Connection): void {
+    console.log(`[call] start ${connection.id.slice(0, 8)}`);
     this.#calls.set(connection.id, []);
   }
 
   /** Each finished utterance extends the call and refreshes the host's view. */
   async onTranscript(text: string, connection: Connection): Promise<void> {
+    console.log(`[call] transcript ${connection.id.slice(0, 8)}: ${JSON.stringify(text)}`);
     const utterances = this.#calls.get(connection.id) ?? [];
     utterances.push(text);
     this.#calls.set(connection.id, utterances);
@@ -186,7 +188,15 @@ export class GroupChat extends ChatAgent<Env, ConversationState> {
   async onCallEnd(connection: Connection): Promise<void> {
     const utterances = this.#calls.get(connection.id) ?? [];
     this.#calls.delete(connection.id);
-    if (utterances.length === 0) return;
+    console.log(`[call] end ${connection.id.slice(0, 8)}, ${utterances.length} utterances`);
+    if (utterances.length === 0) {
+      // Silence here is what made this bug invisible: a failed transcriber ends
+      // the call through the same hook as a clean hang-up.
+      console.warn(
+        `[call] end ${connection.id.slice(0, 8)}: NOTHING TRANSCRIBED — no message written`,
+      );
+      return;
+    }
 
     await this.persistMessages([
       ...this.messages,
