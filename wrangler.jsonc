@@ -34,8 +34,12 @@
     "STT_PROVIDER": "nova3",
     "STT_WHISPER_URL": "",
   },
+  // `remote: true` is required: under `vite dev` the default local AI proxy
+  // cannot perform a WebSocket upgrade, so Nova 3 / Flux streaming STT fails
+  // with "did not return a WebSocket". Remote binds to the real service.
   "ai": {
     "binding": "AI",
+    "remote": true,
   },
   "observability": {
     "enabled": true,
