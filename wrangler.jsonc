@@ -26,7 +26,7 @@
       "new_sqlite_classes": ["ProjectHub", "GroupChat"]
     }
   ],
-  // Speech-to-text provider: nova3 | flux | whisper-local. See src/stt.ts.
+  // Speech-to-text provider: nova3 | flux | whisper-local. See src/server/stt/.
   "vars": {
     "MODEL_PROVIDER": "workers-ai",
     "OPENROUTER_MODEL": "",

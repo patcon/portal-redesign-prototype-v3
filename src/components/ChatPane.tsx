@@ -11,7 +11,7 @@ import { useAgent } from "agents/react";
 import { useAgentChat } from "@cloudflare/ai-chat/react";
 import { MAX_TEXT } from "../shared";
 import type { ConversationState } from "../types";
-import { useCall } from "../voice";
+import { useCall } from "../hooks/useCall";
 
 /**
  * One conversation's messages, composer and call controls. Used by both the

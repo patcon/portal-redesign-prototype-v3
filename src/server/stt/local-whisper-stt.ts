@@ -12,7 +12,7 @@
  *   1. `pnpm stt:setup` — downloads whisper-tiny.en.llamafile into
  *      .whisperfile/ (gitignored; not checked in, ~90MB).
  *   2. `pnpm stt:server` — starts it on port 8080.
- *   3. Set `STT_PROVIDER=whisper-local` in `.dev.vars` (see src/stt.ts).
+ *   3. Set `STT_PROVIDER=whisper-local` in `.dev.vars` (see ./index.ts).
  *
  * Unlike Nova 3, whisperfile has no streaming/endpointing — this session
  * does its own naive energy-based VAD to chunk mic audio into utterances

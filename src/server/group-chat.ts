@@ -9,10 +9,10 @@ import {
   streamText,
   tool
 } from "ai";
-import { getModel } from "../model";
-import { getTranscriber } from "../stt";
-import { ONBOARDING_INSTRUCTIONS, WELCOME_MESSAGE } from "../onboarding";
-import { HOST_INSTRUCTIONS, HOST_WELCOME_MESSAGE } from "../host";
+import { getModel } from "./model";
+import { getTranscriber } from "./stt";
+import { ONBOARDING_INSTRUCTIONS, WELCOME_MESSAGE } from "./prompts/onboarding";
+import { HOST_INSTRUCTIONS, HOST_WELCOME_MESSAGE } from "./prompts/host";
 import type { ChatMeta, ChatOwner, ConversationState } from "../types";
 
 /** How much of a call's transcript the hub keeps for cross-conversation reads. */
