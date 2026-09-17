@@ -293,10 +293,36 @@ Each is independently demoable. Whenever we stop, there is something to show.
 - **Widen `ChatMeta` to push a rolling transcript excerpt to the hub** as it
   accumulates, so the host can read across tables without waking them (see §2).
 - **Done when:** speak, stop, see the transcript in the thread.
+  ✅ **Verified 2026-09-17 ~05:10** with Nova 3: synthesized speech streamed
+  over the call protocol, and separately a fake-microphone Chromium session
+  through the real UI. Live interim text, final transcript in the thread as a
+  "🎙️ Voice call" message, and `transcript` on the hub entry.
+- What landed differently:
+  - `useVoiceInput` addresses agents by class and name and cannot reach a routed
+    chat. `src/voice.ts` adds a `RoutedVoiceTransport` (an `AgentClient` with
+    `basePath`) and drives `VoiceClient` directly through a small `useCall` hook.
+  - The call message is written with `persistMessages`, like the welcome, so
+    the agent doesn't answer a transcript unprompted.
+  - `ChatMeta.seq` now counts pushes rather than messages: transcript updates
+    push without adding a message, and the hub's fence rejected them otherwise.
+  - The table view's controls could fall below the fold; the chat pane now
+    sizes with flex rather than `h-full` inside a flex item.
+- **Known limitation, not fixed:** the server ignores `end_of_speech` and drops
+  speech not yet followed by a pause when the call ends. Pause a beat before
+  tapping stop. (A silence-padding stop was tried and reverted, unverified.)
+- **Dev gotcha:** if Nova 3 fails with "did not return a WebSocket", the dev
+  server's remote AI proxy has gone stale — restart `pnpm start`. Workers AI
+  itself was fine when queried directly.
+- **Debugging gotcha:** a browser with the wrong default input device looks
+  exactly like a broken pipeline ("Listening…" forever, nothing transcribed).
+  Check the input device before debugging the server.
 
 ### Slice 4 — Agent reads the transcript (~30m)
 
 - **Done when:** "what did we just discuss?" is answered from the transcript.
+  ✅ **Verified 2026-09-17 ~05:12**, with no extra code: the call message is in
+  the thread, so it is in the model's context. The agent answered with the
+  transcript's two points.
 
 ### Slice 5 — Host cross-chat view (~45m)
 

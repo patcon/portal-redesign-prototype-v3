@@ -1,9 +1,9 @@
 import { DurableObject, RpcTarget } from "cloudflare:workers";
-import { callable, routeAgentRequest } from "agents";
+import { callable, routeAgentRequest, type Connection } from "agents";
 import { Lifecycle } from "agents/lifecycle";
 import { RoutedAgents } from "agents/routing";
 import { WebSockets } from "agents/websockets";
-import { withVoiceInput } from "agents/voice";
+import { withVoiceInput, WorkersAINova3STT } from "agents/voice";
 import { AIChatAgent } from "@cloudflare/ai-chat";
 import type { UIMessage } from "ai";
 import { convertToModelMessages, streamText } from "ai";
@@ -45,14 +45,21 @@ type ChatMeta = {
   title: string | null;
   lastMessage: string | null;
   /**
-   * The pushing message's own ordinal in its chat, from `messages`'
-   * `AUTOINCREMENT` id. Fences out delayed or superseded pushes without
-   * relying on `Date.now()` resolution: two messages sent back to back
-   * (a real echo can round-trip inside one millisecond) get consecutive
-   * ordinals and so never tie, unlike wall-clock timestamps.
+   * The tail of the table's most recent call, pushed as it is spoken. This is
+   * what lets the host read across every table without waking any of them;
+   * without it, reaching a transcript means drilling into one chat at a time.
+   */
+  transcript: string | null;
+  /**
+   * A per-chat push counter. Fences out delayed or superseded pushes without
+   * relying on `Date.now()` resolution. It counts pushes rather than messages
+   * because a call pushes transcript updates without adding any message.
    */
   seq: number;
 };
+
+/** How much of a call's transcript the hub keeps for cross-table reading. */
+const TRANSCRIPT_EXCERPT = 600;
 
 /** Recorded once by the owning hub right after the entry is created. */
 type ChatOwner = {
@@ -101,6 +108,14 @@ export class GroupChat extends ChatAgent<Env> {
   /** Bounded so a long event cannot grow one table's turn without limit. */
   maxPersistedMessages = 200;
 
+  transcriber = new WorkersAINova3STT(this.env.AI);
+
+  /**
+   * Utterances of calls in progress, per connection. In memory: an open call
+   * holds its socket open, so the object stays awake for the call's duration.
+   */
+  #calls = new Map<string, string[]>();
+
   async init(owner: ChatOwner): Promise<void> {
     await this.ctx.storage.put("owner", owner);
     // Onboarding opens itself: the participant arrives to a question rather
@@ -125,16 +140,67 @@ export class GroupChat extends ChatAgent<Env> {
     return result.toUIMessageStreamResponse();
   }
 
+  onCallStart(connection: Connection): void {
+    this.#calls.set(connection.id, []);
+  }
+
+  /** Each finished utterance extends the call and refreshes the host's view. */
+  async onTranscript(text: string, connection: Connection): Promise<void> {
+    const utterances = this.#calls.get(connection.id) ?? [];
+    utterances.push(text);
+    this.#calls.set(connection.id, utterances);
+    await this.ctx.storage.put(
+      "transcript",
+      utterances.join(" ").slice(-TRANSCRIPT_EXCERPT)
+    );
+    await this.#pushToHub();
+  }
+
+  /**
+   * Ending the call leaves the transcript in the thread, as a message from the
+   * table. Persisted without a model turn: the agent should not answer a
+   * transcript unprompted, but it is now in the context for the next question.
+   */
+  async onCallEnd(connection: Connection): Promise<void> {
+    const utterances = this.#calls.get(connection.id) ?? [];
+    this.#calls.delete(connection.id);
+    if (utterances.length === 0) return;
+
+    await this.persistMessages([
+      ...this.messages,
+      {
+        id: crypto.randomUUID(),
+        role: "user",
+        metadata: { kind: "voice-call" },
+        parts: [
+          { type: "text", text: `Voice call transcript:\n${utterances.join(" ")}` }
+        ]
+      }
+    ]);
+    await this.#pushToHub();
+  }
+
   /**
    * Fires after a turn is persisted. Pushing here rather than on every frame
    * means the hub sees one update per turn, not one per streamed token.
    */
   protected async onChatResponse(): Promise<void> {
+    await this.#pushToHub();
+  }
+
+  /** Refresh this table's entry in the hub, so listing never wakes a chat. */
+  async #pushToHub(): Promise<void> {
     const owner = await this.ctx.storage.get<ChatOwner>("owner");
     if (!owner) return;
 
+    const seq = ((await this.ctx.storage.get<number>("pushSeq")) ?? 0) + 1;
+    await this.ctx.storage.put("pushSeq", seq);
+
     const firstFromParticipant = this.messages.find(
-      (message) => message.role === "user"
+      (message) =>
+        message.role === "user" &&
+        (message.metadata as { kind?: string } | undefined)?.kind !==
+          "voice-call"
     );
     const latest = this.messages.at(-1);
 
@@ -145,9 +211,9 @@ export class GroupChat extends ChatAgent<Env> {
           ? messageText(firstFromParticipant).slice(0, 80)
           : null,
         lastMessage: latest ? messageText(latest).slice(0, 120) : null,
-        // Message count is monotonic per chat, which is all the hub's fence
-        // needs; it only ever compares a chat's pushes against its own.
-        seq: this.messages.length
+        transcript:
+          (await this.ctx.storage.get<string>("transcript")) ?? null,
+        seq
       });
     } catch (error) {
       console.warn("[GroupChat] owner update failed", error);
@@ -228,7 +294,13 @@ export class ProjectHub extends DurableObject<Env> {
 
   async createChat(kind: ChatKind = "group"): Promise<string> {
     const { id } = await this.chats.create({
-      metadata: { kind, title: null, lastMessage: null, seq: 0 }
+      metadata: {
+        kind,
+        title: null,
+        lastMessage: null,
+        transcript: null,
+        seq: 0
+      }
     });
     try {
       // get() resolves the entry to an initialized, typed stub for RPC.
@@ -307,7 +379,7 @@ export class ProjectHub extends DurableObject<Env> {
   async searchChats(query: string) {
     const needle = query.toLowerCase();
     return (await this.chats.list()).filter(({ metadata }) =>
-      [metadata?.title, metadata?.lastMessage].some((value) =>
+      [metadata?.title, metadata?.lastMessage, metadata?.transcript].some((value) =>
         value?.toLowerCase().includes(needle)
       )
     );

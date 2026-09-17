@@ -9,9 +9,11 @@ import {
 } from "@cloudflare/kumo";
 import {
   ChatCircleIcon,
+  MicrophoneIcon,
   MoonIcon,
   PaperPlaneRightIcon,
   PlusIcon,
+  StopIcon,
   SunIcon,
   TrashIcon
 } from "@phosphor-icons/react";
@@ -25,12 +27,14 @@ import qrcode from "qrcode-generator";
 import { hrefFor, navigate, parseRoute } from "./router";
 import type { Route } from "./router";
 import { MAX_TEXT } from "./shared";
+import { useCall } from "./voice";
 import "./styles.css";
 
 type ChatEntry = RoutedAgentEntry<{
   kind: "host" | "group";
   title: string | null;
   lastMessage: string | null;
+  transcript: string | null;
   seq: number;
 }>;
 
@@ -131,10 +135,9 @@ function ChatPane({
   // One WebSocket per open chat. The upgrade goes through the event hub,
   // which resolves the chat ID; the chat's own DO then owns the socket,
   // so the hub is not on the message path.
-  const agent = useAgent({
-    agent: "group-chat",
-    basePath: `agents/project-hub/${encodeURIComponent(eventId)}/chats/${encodeURIComponent(chatId)}`
-  });
+  const basePath = `agents/project-hub/${encodeURIComponent(eventId)}/chats/${encodeURIComponent(chatId)}`;
+  const agent = useAgent({ agent: "group-chat", basePath });
+  const call = useCall(basePath);
   const { messages, sendMessage, status } = useAgentChat({
     agent,
     experimental_throttle: 100
@@ -150,7 +153,7 @@ function ChatPane({
   }, [isStreaming, onActivity]);
 
   useEffect(() => {
-    tail.current?.scrollIntoView({ block: "end" });
+    tail.current?.scrollIntoView({ block: "nearest" });
   }, [messages]);
 
   const send = useCallback(
@@ -165,8 +168,8 @@ function ChatPane({
   );
 
   return (
-    <div className="flex h-full min-h-0 flex-col">
-      <div className="flex-1 space-y-2 overflow-y-auto p-4">
+    <div className="flex min-h-0 flex-1 flex-col">
+      <div className="min-h-0 flex-1 space-y-2 overflow-y-auto p-4">
         {messages.length === 0 ? (
           <Empty
             icon={<ChatCircleIcon size={24} />}
@@ -179,6 +182,9 @@ function ChatPane({
               .map((part) => (part.type === "text" ? part.text : ""))
               .join("");
             if (!text) return null;
+            const isCall =
+              (message.metadata as { kind?: string } | undefined)?.kind ===
+              "voice-call";
             return (
               <div
                 key={message.id}
@@ -189,7 +195,18 @@ function ChatPane({
                     message.role === "user" ? "bg-kumo-brand/10" : ""
                   }`}
                 >
-                  <Text size="sm">{text}</Text>
+                  {isCall ? (
+                    <>
+                      <Text size="xs" variant="secondary">
+                        🎙️ Voice call
+                      </Text>
+                      <Text size="sm">
+                        {text.replace(/^Voice call transcript:\n/, "")}
+                      </Text>
+                    </>
+                  ) : (
+                    <Text size="sm">{text}</Text>
+                  )}
                 </Surface>
               </div>
             );
@@ -197,6 +214,28 @@ function ChatPane({
         )}
         <div ref={tail} />
       </div>
+      {call.inCall && (
+        <div className="border-t border-kumo-line p-3">
+          <div className="mb-2 h-1 w-full overflow-hidden rounded-full bg-kumo-tint">
+            <div
+              className="h-full bg-kumo-brand transition-all duration-75"
+              style={{ width: `${Math.min(call.level * 500, 100)}%` }}
+            />
+          </div>
+          <Text size="xs" variant="secondary">
+            {call.heard || call.interim
+              ? [call.heard, call.interim].filter(Boolean).join(" ")
+              : "Listening…"}
+          </Text>
+        </div>
+      )}
+      {call.error && (
+        <div className="border-t border-kumo-line px-3 py-2">
+          <Text size="xs" variant="secondary">
+            {call.error}
+          </Text>
+        </div>
+      )}
       <form
         onSubmit={send}
         className="flex gap-2 border-t border-kumo-line p-3"
@@ -207,6 +246,16 @@ function ChatPane({
           onChange={(event) => setDraft(event.currentTarget.value)}
           placeholder={isStreaming ? "Thinking…" : "Say something…"}
           className="flex-1"
+        />
+        <Button
+          type="button"
+          variant={call.inCall ? "destructive" : "secondary"}
+          shape="square"
+          aria-label={call.inCall ? "End call" : "Start call"}
+          onClick={call.inCall ? call.stop : call.start}
+          icon={
+            call.inCall ? <StopIcon size={16} /> : <MicrophoneIcon size={16} />
+          }
         />
         <Button
           type="submit"
@@ -364,7 +413,7 @@ function HostView({ eventId }: { eventId: string }) {
           </div>
         </aside>
 
-        <main className="min-w-0 flex-1">
+        <main className="flex min-h-0 min-w-0 flex-1 flex-col">
           {activeId ? (
             <ChatPane
               key={activeId}
@@ -397,7 +446,7 @@ function GroupView({ eventId, chatId }: { eventId: string; chatId: string }) {
         <Text bold>Table {chatId.slice(0, 8)}</Text>
         <ModeToggle />
       </header>
-      <main className="min-h-0 flex-1">
+      <main className="flex min-h-0 flex-1 flex-col">
         <ChatPane eventId={eventId} chatId={chatId} />
       </main>
     </div>
