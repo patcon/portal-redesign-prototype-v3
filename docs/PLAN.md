@@ -130,7 +130,7 @@ chat during `createChat` (`chat.init(...)`). The same typed stub reaches a
 so a phone at that table sees the message arrive live. Path:
 `HostThread` tool → `env.ProjectHub.getByName(event)` → `chats.get(id)` → inject.
 
-This is the `pizzo` "one document, two hands" pattern from `BRAINSTORM.md` — the
+This is the `pizzo` "one document, two hands" pattern from `docs/BRAINSTORM.md` — the
 agent acting on the same surface the user acts on — and it is also the seam where
 admin-only forwarded attachments eventually live. Nothing here forecloses it.
 
@@ -330,7 +330,7 @@ styling · anything from `pizzo`'s think-agent architecture.
 | `…/echo/frontend/src/components/participant` | onboarding flow + copy |
 | `~/repos/dembrane-portal-redesign` | earlier UI attempts |
 | `~/repos/pizzo` | inspiration only; not used today |
-| `BRAINSTORM.md` | original raw notes, incl. later-stage goals |
+| `docs/BRAINSTORM.md` | original raw notes, incl. later-stage goals |
 
 Relevant skills available in-session: `agents-sdk`, `cloudflare`,
 `durable-objects`, `wrangler`.
