@@ -206,7 +206,7 @@ export class GroupChat extends ChatAgent<Env, ConversationState> {
       }),
       setParticipantCount: tool({
         description:
-          "Record how many people are taking part in this conversation: 1 if recording on their own, otherwise the number they give.",
+          "Record how many people are taking part in this conversation: 1 if they are recording on their own or say they are not a group, otherwise the number they give.",
         inputSchema: jsonSchema<{ count: number }>({
           type: "object",
           properties: { count: { type: "integer", minimum: 1, maximum: 100 } },
