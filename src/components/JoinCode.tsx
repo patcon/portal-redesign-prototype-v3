@@ -1,7 +1,7 @@
 import { useMemo } from "react";
 import { Text } from "@cloudflare/kumo";
 import qrcode from "qrcode-generator";
-import { hrefFor } from "../router";
+import { absoluteHrefFor } from "../router";
 
 /**
  * Rendered from `location.origin`, so the code encodes whatever address the
@@ -9,7 +9,7 @@ import { hrefFor } from "../router";
  * points at the LAN address; there is no configured hostname to get wrong.
  */
 export function JoinCode({ eventId }: { eventId: string }) {
-  const joinUrl = `${location.origin}${hrefFor({ name: "join", eventId })}`;
+  const joinUrl = absoluteHrefFor({ name: "join", eventId }, location.origin);
   const svg = useMemo(() => {
     const qr = qrcode(0, "M");
     qr.addData(joinUrl);

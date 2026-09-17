@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { hrefFor, parseRoute, type Route } from "./router";
+import { absoluteHrefFor, hrefFor, parseRoute, type Route } from "./router";
 
 describe("parseRoute", () => {
   it("reads the join link", () => {
@@ -59,5 +59,37 @@ describe("hrefFor", () => {
 
   it("escapes ids that would otherwise change the path", () => {
     expect(hrefFor({ name: "host", eventId: "a/b" })).toBe("/events/a%2Fb/secret");
+  });
+});
+
+describe("absoluteHrefFor", () => {
+  it("puts the origin in front of the path", () => {
+    expect(
+      absoluteHrefFor(
+        { name: "group", eventId: "abc123", chatId: "chat-9" },
+        "https://portal.example"
+      )
+    ).toBe("https://portal.example/events/abc123/group/chat-9");
+  });
+
+  it("works for a LAN origin with a port, which is how an event is run", () => {
+    expect(
+      absoluteHrefFor({ name: "join", eventId: "abc123" }, "http://192.168.1.4:5173")
+    ).toBe("http://192.168.1.4:5173/events/abc123");
+  });
+
+  it("still escapes ids that would otherwise change the path", () => {
+    expect(
+      absoluteHrefFor(
+        { name: "group", eventId: "a/b", chatId: "c d" },
+        "https://portal.example"
+      )
+    ).toBe("https://portal.example/events/a%2Fb/group/c%20d");
+  });
+
+  it("tolerates an origin handed to it with a trailing slash", () => {
+    expect(
+      absoluteHrefFor({ name: "host", eventId: "abc123" }, "https://portal.example/")
+    ).toBe("https://portal.example/events/abc123/secret");
   });
 });

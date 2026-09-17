@@ -12,6 +12,7 @@ import type { ChatEntry } from "../types";
 import { ChatPane } from "./ChatPane";
 import { JoinCode } from "./JoinCode";
 import { ModeToggle } from "./ModeToggle";
+import { ShareLink } from "./ShareLink";
 
 /**
  * The host's console: their own private thread, the QR code that spawns
@@ -174,8 +175,12 @@ export function HostView({ eventId }: { eventId: string }) {
         </main>
 
         {activeId && (
-          <aside className="w-64 border-l border-kumo-line">
+          <aside className="flex w-64 flex-col overflow-y-auto border-l border-kumo-line">
             <JoinCode eventId={eventId} />
+            {/* The host's own thread is nobody else's to open. */}
+            {activeId !== hostChatId && (
+              <ShareLink eventId={eventId} chatId={activeId} />
+            )}
           </aside>
         )}
       </div>

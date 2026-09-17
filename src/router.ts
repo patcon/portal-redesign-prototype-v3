@@ -30,6 +30,16 @@ export function hrefFor(route: Route): string {
   }
 }
 
+/**
+ * A route as a link someone else can open: the same path, behind an origin.
+ * The origin is passed in rather than read from `location`, so this stays a
+ * pure function — the host may be serving on a LAN address, and the caller is
+ * the one that knows which.
+ */
+export function absoluteHrefFor(route: Route, origin: string): string {
+  return `${origin.replace(/\/$/, "")}${hrefFor(route)}`;
+}
+
 export function navigate(route: Route): void {
   history.pushState(null, "", hrefFor(route));
   dispatchEvent(new PopStateEvent("popstate"));
