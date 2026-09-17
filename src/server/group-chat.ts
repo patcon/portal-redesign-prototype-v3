@@ -167,6 +167,10 @@ export class GroupChat extends ChatAgent<Env, ConversationState> {
 
   onCallStart(connection: Connection): void {
     console.log(`[call] start ${connection.id.slice(0, 8)}`);
+    // The mixin has already created the transcriber session and waited for it
+    // to be ready; this is where it gets a name, so hang-up can go looking for
+    // what the call heard.
+    this.transcriber.claim(connection.id);
     this.#calls.set(connection.id, []);
   }
 
@@ -188,6 +192,22 @@ export class GroupChat extends ChatAgent<Env, ConversationState> {
   async onCallEnd(connection: Connection): Promise<void> {
     const utterances = this.#calls.get(connection.id) ?? [];
     this.#calls.delete(connection.id);
+
+    // Deepgram only finalises an utterance once its endpointer hears a pause,
+    // and in a noisy room — a fan, a busy venue — that pause may never come.
+    // Whatever was said since the last final is still sitting in the interim
+    // text, so take it rather than lose the end of what someone said.
+    const trailing = this.transcriber.takeTrailingInterim(connection.id);
+    this.transcriber.release(connection.id);
+    if (trailing) {
+      console.log(
+        `[call] end ${connection.id.slice(0, 8)}: trailing interim ${JSON.stringify(trailing)}`,
+      );
+      utterances.push(trailing);
+      // Keep the host's excerpt in step: `onTranscript` never saw this text.
+      await this.ctx.storage.put("transcript", utterances.join(" ").slice(-TRANSCRIPT_EXCERPT));
+    }
+
     console.log(`[call] end ${connection.id.slice(0, 8)}, ${utterances.length} utterances`);
     if (utterances.length === 0) {
       // Silence here is what made this bug invisible: a failed transcriber ends
