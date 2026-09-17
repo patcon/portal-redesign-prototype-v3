@@ -1,5 +1,4 @@
 import { useMemo } from "react";
-import { Text } from "@cloudflare/kumo";
 import qrcode from "qrcode-generator";
 import { absoluteHrefFor } from "../router";
 
@@ -18,18 +17,15 @@ export function JoinCode({ eventId }: { eventId: string }) {
   }, [joinUrl]);
 
   return (
-    <div className="flex flex-col items-center gap-3 p-4">
-      <Text size="sm" variant="secondary">
-        Scan to join this event
-      </Text>
+    <div className="flex flex-col items-center gap-3">
+      <p className="text-muted-foreground text-sm">Scan to join this event</p>
+      {/* White regardless of theme: a dark QR code does not scan. */}
       <div
-        className="w-48 bg-white p-2"
+        className="w-48 rounded-lg bg-white p-2"
         // Generated from our own join URL, not from anything a user typed.
         dangerouslySetInnerHTML={{ __html: svg }}
       />
-      <Text size="xs" variant="secondary">
-        {joinUrl}
-      </Text>
+      <p className="text-muted-foreground text-xs break-all select-all">{joinUrl}</p>
     </div>
   );
 }

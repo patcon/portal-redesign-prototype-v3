@@ -5,7 +5,10 @@ import { CallTranscriber } from "./call-transcriber";
 /** A transcriber whose callbacks the test fires by hand. */
 function fakeProvider() {
   let options: TranscriberSessionOptions | undefined;
-  const session: TranscriberSession = { feed: vi.fn(), close: vi.fn() };
+  const session: TranscriberSession = {
+    feed: vi.fn<TranscriberSession["feed"]>(),
+    close: vi.fn<TranscriberSession["close"]>(),
+  };
   const provider: Transcriber = {
     createSession(received) {
       options = received;

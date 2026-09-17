@@ -1,13 +1,17 @@
 import { useEffect, useState } from "react";
-import { Button } from "@cloudflare/kumo";
-import { MoonIcon, SunIcon } from "@phosphor-icons/react";
+import { MoonIcon, SunIcon } from "lucide-react";
+import { Button } from "@/components/ui/shadcn/button";
 
-/** Light/dark switch, remembered per browser. */
+/**
+ * Light/dark switch, remembered per browser. It writes the same two things the
+ * bootstrap script in `index.html` writes — the `dark` class and `colorScheme` —
+ * so the two cannot disagree about which mode is showing.
+ */
 export function ModeToggle() {
   const [mode, setMode] = useState(() => localStorage.getItem("theme") ?? "light");
 
   useEffect(() => {
-    document.documentElement.setAttribute("data-mode", mode);
+    document.documentElement.classList.toggle("dark", mode === "dark");
     document.documentElement.style.colorScheme = mode;
     localStorage.setItem("theme", mode);
   }, [mode]);
@@ -15,10 +19,11 @@ export function ModeToggle() {
   return (
     <Button
       variant="ghost"
-      shape="square"
+      size="icon"
       aria-label="Toggle theme"
       onClick={() => setMode((value) => (value === "light" ? "dark" : "light"))}
-      icon={mode === "light" ? <MoonIcon size={16} /> : <SunIcon size={16} />}
-    />
+    >
+      {mode === "light" ? <MoonIcon className="size-4" /> : <SunIcon className="size-4" />}
+    </Button>
   );
 }

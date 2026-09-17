@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
-import { Button, Text } from "@cloudflare/kumo";
-import { CheckIcon, CopyIcon } from "@phosphor-icons/react";
+import { CheckIcon, CopyIcon } from "lucide-react";
+import { Button } from "@/components/ui/shadcn/button";
 import { absoluteHrefFor } from "../router";
 
 /**
@@ -33,26 +33,17 @@ export function ShareLink({ eventId, chatId }: { eventId: string; chatId: string
   }, [url]);
 
   return (
-    <div className="flex flex-col gap-2 border-t border-kumo-line p-4">
-      <Text size="sm" variant="secondary">
-        Direct link to this conversation
-      </Text>
-      <div className="break-all select-all">
-        <Text size="xs" variant="secondary">
-          {url}
-        </Text>
-      </div>
-      <Button
-        variant="secondary"
-        onClick={copy}
-        icon={copied ? <CheckIcon size={16} /> : <CopyIcon size={16} />}
-      >
+    <div className="flex flex-col gap-2">
+      <p className="text-muted-foreground text-sm">Direct link to this conversation</p>
+      <p className="text-muted-foreground text-xs break-all select-all">{url}</p>
+      <Button variant="secondary" onClick={copy}>
+        {copied ? <CheckIcon className="size-4" /> : <CopyIcon className="size-4" />}
         {copied ? "Copied" : "Copy link"}
       </Button>
       {clipboardFailed && (
-        <Text size="xs" variant="secondary">
+        <p className="text-muted-foreground text-xs">
           Couldn't reach the clipboard — select the link above to copy it.
-        </Text>
+        </p>
       )}
     </div>
   );
