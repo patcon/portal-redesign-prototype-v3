@@ -17,7 +17,7 @@ import { getModel, modelLabel } from "./model";
 import { getTranscriber, sttLabel } from "./stt";
 import { ONBOARDING_INSTRUCTIONS, WELCOME_MESSAGE } from "./onboarding";
 import { HOST_INSTRUCTIONS, HOST_WELCOME_MESSAGE } from "./host";
-import { MAX_QUERY } from "./shared";
+import { CHATS_CHANGED, MAX_QUERY } from "./shared";
 
 /**
  * The recommended shape for "many chats per user": one top-level
@@ -411,6 +411,7 @@ export class ProjectHub extends DurableObject<Env> {
       await this.chats.delete(id);
       throw error;
     }
+    this.#announceChatsChanged();
     return id;
   }
 
@@ -459,11 +460,25 @@ export class ProjectHub extends DurableObject<Env> {
       }
       // `kind` is the hub's to assign, so carry it across rather than let
       // a chat's push — which cannot know it — erase it.
-      return this.chats.setMetadata(chatId, {
+      const updated = await this.chats.setMetadata(chatId, {
         ...meta,
         kind: current.metadata?.kind ?? "group"
       });
+      if (updated) this.#announceChatsChanged();
+      return updated;
     });
+  }
+
+  /**
+   * Tell every open host console to re-read the catalog. A nudge rather than
+   * the data: the console already knows how to list and search, and a table
+   * renaming itself should not need a second path to reach the sidebar.
+   */
+  #announceChatsChanged(): void {
+    const frame = JSON.stringify({ type: CHATS_CHANGED });
+    for (const connection of this.webSockets.getConnections()) {
+      connection.send(frame);
+    }
   }
 
   /** Most recent activity first; reads only this DO. */
@@ -482,8 +497,10 @@ export class ProjectHub extends DurableObject<Env> {
   }
 
   /** Destroys the chat's own storage and removes it from the catalog. */
-  deleteChat(chatId: string): Promise<boolean> {
-    return this.chats.delete(chatId);
+  async deleteChat(chatId: string): Promise<boolean> {
+    const deleted = await this.chats.delete(chatId);
+    if (deleted) this.#announceChatsChanged();
+    return deleted;
   }
 
   /** Which provider chats will actually use — the demo gets asked this. */

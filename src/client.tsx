@@ -26,7 +26,7 @@ import type { RoutedAgentEntry } from "agents/routing";
 import qrcode from "qrcode-generator";
 import { hrefFor, navigate, parseRoute } from "./router";
 import type { Route } from "./router";
-import { MAX_TEXT } from "./shared";
+import { CHATS_CHANGED, MAX_TEXT } from "./shared";
 import { useCall } from "./voice";
 import "./styles.css";
 
@@ -55,8 +55,23 @@ type HubApi = {
   deleteChat(chatId: string): Promise<boolean>;
 };
 
-function useHub(eventId: string) {
-  const hub = useAgent({ agent: "project-hub", name: eventId });
+function useHub(eventId: string, onChatsChanged?: () => void) {
+  const changed = useRef(onChatsChanged);
+  changed.current = onChatsChanged;
+  const hub = useAgent({
+    agent: "project-hub",
+    name: eventId,
+    // The hub nudges its sockets when a table's entry changes — a table
+    // naming itself, a new message, a call — so the sidebar stays live.
+    onMessage: (message) => {
+      if (typeof message.data !== "string") return;
+      try {
+        if (JSON.parse(message.data).type === CHATS_CHANGED) changed.current?.();
+      } catch {
+        // Not ours: the SDK's own frames are handled before this.
+      }
+    }
+  });
   return { hub, api: hub.stub as HubApi };
 }
 
@@ -290,7 +305,8 @@ function ChatPane({
  * hub, so no table's Durable Object wakes for the sidebar.
  */
 function HostView({ eventId }: { eventId: string }) {
-  const { hub, api } = useHub(eventId);
+  const refresh = useRef<() => void>(undefined);
+  const { hub, api } = useHub(eventId, () => refresh.current?.());
   const [chats, setChats] = useState<ChatEntry[]>([]);
   const [hostChatId, setHostChatId] = useState<string | null>(null);
   const [model, setModel] = useState<string | null>(null);
@@ -303,6 +319,7 @@ function HostView({ eventId }: { eventId: string }) {
       needle === "" ? await api.listChats() : await api.searchChats(needle)
     );
   }, [api, query]);
+  refresh.current = () => void refreshChats();
 
   useEffect(() => {
     if (!hub.identified) return;
