@@ -53,8 +53,9 @@ type ChatMeta = {
   title: string | null;
   lastMessage: string | null;
   /**
-   * The tail of the table's most recent call, pushed as it is spoken. This is
-   * what lets the host read across every table without waking any of them;
+   * The tail of the conversation's most recent call, pushed as it is spoken.
+   * This is what lets the host read across every conversation without waking
+   * any of them;
    * without it, reaching a transcript means drilling into one chat at a time.
    */
   transcript: string | null;
@@ -66,7 +67,7 @@ type ChatMeta = {
   seq: number;
 };
 
-/** How much of a call's transcript the hub keeps for cross-table reading. */
+/** How much of a call's transcript the hub keeps for cross-conversation reads. */
 const TRANSCRIPT_EXCERPT = 600;
 
 /** Recorded once by the owning hub right after the entry is created. */
@@ -76,14 +77,14 @@ type ChatOwner = {
   kind: ChatKind;
 };
 
-/** A table as the host's tools see it: the hub's pushed metadata, no more. */
-function describeTables(
+/** A conversation as the host's tools see it: the hub's pushed metadata. */
+function describeConversations(
   entries: readonly { id: string; metadata: ChatMeta | null }[]
 ) {
   return entries
     .filter((entry) => entry.metadata?.kind !== "host")
     .map((entry, index) => ({
-      table: index + 1,
+      conversation: index + 1,
       title: entry.metadata?.title ?? null,
       lastMessage: entry.metadata?.lastMessage ?? null,
       recentCallTranscript: entry.metadata?.transcript ?? null
@@ -127,16 +128,16 @@ function messageText(message: UIMessage): string {
 }
 
 /**
- * A table's synced state. Agent state reaches every connected client, so the
- * table's own screen shows its name the moment the agent sets it.
+ * A conversation's synced state. Agent state reaches every connected client,
+ * so the conversation's own screen shows its name the moment the agent sets it.
  */
-type TableState = { name: string | null; participants: number | null };
+type ConversationState = { name: string | null; participants: number | null };
 
-/** One Durable Object per table, reached only through its owning event hub. */
-export class GroupChat extends ChatAgent<Env, TableState> {
-  initialState: TableState = { name: null, participants: null };
+/** One Durable Object per conversation, reached only through its event hub. */
+export class GroupChat extends ChatAgent<Env, ConversationState> {
+  initialState: ConversationState = { name: null, participants: null };
 
-  /** Bounded so a long event cannot grow one table's turn without limit. */
+  /** Bounded so a long event cannot grow one conversation's turn unbounded. */
   maxPersistedMessages = 200;
 
   transcriber = getTranscriber(this.env);
@@ -149,7 +150,7 @@ export class GroupChat extends ChatAgent<Env, TableState> {
 
   async init(owner: ChatOwner): Promise<void> {
     await this.ctx.storage.put("owner", owner);
-    // The host's thread just says hello. A table's onboarding opens itself:
+    // The host's thread just says hello. Onboarding opens itself instead:
     // the participant arrives to a question rather than an empty box. `persistMessages` rather than `saveMessages`,
     // because `saveMessages` drives a model turn — which would have the
     // agent answer its own greeting before anyone has typed anything.
@@ -174,19 +175,22 @@ export class GroupChat extends ChatAgent<Env, TableState> {
       model: getModel(this.env, { sessionAffinity: this.sessionAffinity }),
       system: isHost ? HOST_INSTRUCTIONS : ONBOARDING_INSTRUCTIONS,
       messages: await convertToModelMessages(this.messages),
-      tools: isHost && owner ? this.#hostTools(owner.eventId) : this.#tableTools(),
+      tools:
+        isHost && owner
+          ? this.#hostTools(owner.eventId)
+          : this.#conversationTools(),
       // Room for a tool call and the answer that reads its result.
       stopWhen: stepCountIs(5)
     });
     return result.toUIMessageStreamResponse();
   }
 
-  /** A table names itself during onboarding; the host sees the name. */
-  #tableTools() {
+  /** A conversation names itself during onboarding; the host sees the name. */
+  #conversationTools() {
     return {
-      setTableName: tool({
+      setConversationName: tool({
         description:
-          "Set this table's name, so the host can tell the tables apart. Call it as soon as the participants say what to call their table.",
+          "Set this conversation's name, so the host can tell the conversations apart. Call it as soon as the participants say what to call theirs.",
         inputSchema: jsonSchema<{ name: string }>({
           type: "object",
           properties: { name: { type: "string", maxLength: 60 } },
@@ -202,7 +206,7 @@ export class GroupChat extends ChatAgent<Env, TableState> {
       }),
       setParticipantCount: tool({
         description:
-          "Record how many people are taking part at this table: 1 if recording on their own, otherwise the number they give.",
+          "Record how many people are taking part in this conversation: 1 if recording on their own, otherwise the number they give.",
         inputSchema: jsonSchema<{ count: number }>({
           type: "object",
           properties: { count: { type: "integer", minimum: 1, maximum: 100 } },
@@ -222,30 +226,30 @@ export class GroupChat extends ChatAgent<Env, TableState> {
 
   /**
    * The host's view across the room. Both tools read only the hub's pushed
-   * metadata, so asking "what's happening?" wakes no table.
+   * metadata, so asking "what's happening?" wakes no conversation.
    */
   #hostTools(eventId: string) {
     const hub = this.env.ProjectHub.getByName(eventId);
     return {
-      listTables: tool({
+      listConversations: tool({
         description:
-          "List every table at the event with its latest message and the tail of its most recent voice call.",
+          "List every conversation in the event with its latest message and the tail of its most recent voice call.",
         inputSchema: jsonSchema<Record<string, never>>({
           type: "object",
           properties: {}
         }),
-        execute: async () => describeTables(await hub.listChats())
+        execute: async () => describeConversations(await hub.listChats())
       }),
-      searchTables: tool({
+      searchConversations: tool({
         description:
-          "Find tables whose title, latest message or call transcript mentions a word or phrase.",
+          "Find conversations whose title, latest message or call transcript mentions a word or phrase.",
         inputSchema: jsonSchema<{ query: string }>({
           type: "object",
           properties: { query: { type: "string" } },
           required: ["query"]
         }),
         execute: async ({ query }) =>
-          describeTables(await hub.searchChats(query))
+          describeConversations(await hub.searchChats(query))
       })
     };
   }
@@ -268,7 +272,7 @@ export class GroupChat extends ChatAgent<Env, TableState> {
 
   /**
    * Ending the call leaves the transcript in the thread, as a message from the
-   * table. Persisted without a model turn: the agent should not answer a
+   * conversation. Persisted without a model turn: the agent should not answer a
    * transcript unprompted, but it is now in the context for the next question.
    */
   async onCallEnd(connection: Connection): Promise<void> {
@@ -298,7 +302,7 @@ export class GroupChat extends ChatAgent<Env, TableState> {
     await this.#pushToHub();
   }
 
-  /** Refresh this table's entry in the hub, so listing never wakes a chat. */
+  /** Refresh this conversation's entry, so listing never wakes a chat. */
   async #pushToHub(): Promise<void> {
     const owner = await this.ctx.storage.get<ChatOwner>("owner");
     if (!owner) return;
@@ -317,7 +321,7 @@ export class GroupChat extends ChatAgent<Env, TableState> {
     try {
       const hub = this.env.ProjectHub.getByName(owner.eventId);
       await hub.recordChatActivity(owner.chatId, {
-        // The name the table chose, once it has one; until then, its first words.
+        // The name the conversation chose, if any; until then, its first words.
         title:
           this.state.name ??
           (firstFromParticipant
@@ -333,7 +337,7 @@ export class GroupChat extends ChatAgent<Env, TableState> {
     }
   }
 
-  /** Read by the host's cross-table view in Slice 5. */
+  /** Read by the host's cross-conversation view in Slice 5. */
   @callable()
   getMessages(): UIMessage[] {
     return this.messages;
@@ -446,7 +450,7 @@ export class ProjectHub extends DurableObject<Env> {
     });
   }
 
-  /** A table joining the event. One scan of the host's QR code, one chat. */
+  /** A conversation joining the event. One scan of the host's QR code, one chat. */
   joinEvent(): Promise<string> {
     return this.createChat("group");
   }
@@ -488,7 +492,7 @@ export class ProjectHub extends DurableObject<Env> {
 
   /**
    * Tell every open host console to re-read the catalog. A nudge rather than
-   * the data: the console already knows how to list and search, and a table
+   * the data: the console already knows how to list and search, and a conversation
    * renaming itself should not need a second path to reach the sidebar.
    */
   #announceChatsChanged(): void {

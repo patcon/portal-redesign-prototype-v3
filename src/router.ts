@@ -1,6 +1,6 @@
 /**
  * The whole router. Three routes, no dependency: the host's console, the
- * join link a QR code points at, and one table's chat.
+ * join link a QR code points at, and one conversation's chat.
  */
 
 export type Route =

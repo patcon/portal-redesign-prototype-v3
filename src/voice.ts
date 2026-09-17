@@ -5,8 +5,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 /**
  * The SDK's voice transport addresses an agent by class and instance name,
- * but a table is only reachable through its event hub's route. This is the
- * same socket, pointed at that route with `basePath` — the hub resolves the
+ * but a conversation is only reachable through its event hub's route. This is
+ * the same socket, pointed at that route with `basePath` — the hub resolves the
  * chat and the chat's own Durable Object answers, exactly as for text.
  */
 class RoutedVoiceTransport implements VoiceTransport {
@@ -58,8 +58,8 @@ class RoutedVoiceTransport implements VoiceTransport {
 }
 
 /**
- * A table's call: microphone in, live transcript out. The server accumulates
- * the transcript and, when the call ends, leaves it in the thread.
+ * A conversation's call: microphone in, live transcript out. The server
+ * accumulates the transcript and, when the call ends, leaves it in the thread.
  */
 export function useCall(basePath: string) {
   const client = useRef<VoiceClient | null>(null);

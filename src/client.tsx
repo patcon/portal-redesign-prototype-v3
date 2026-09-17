@@ -38,8 +38,8 @@ type ChatEntry = RoutedAgentEntry<{
   seq: number;
 }>;
 
-/** A table's synced agent state, as `GroupChat` defines it. */
-type TableState = { name: string | null; participants: number | null };
+/** A conversation's synced agent state, as `GroupChat` defines it. */
+type ConversationState = { name: string | null; participants: number | null };
 
 type ChatMessage = {
   role: "user" | "assistant";
@@ -64,7 +64,7 @@ function useHub(eventId: string, onChatsChanged?: () => void) {
   const hub = useAgent({
     agent: "project-hub",
     name: eventId,
-    // The hub nudges its sockets when a table's entry changes — a table
+    // The hub nudges its sockets when a conversation's entry changes — one
     // naming itself, a new message, a call — so the sidebar stays live.
     onMessage: (message) => {
       if (typeof message.data !== "string") return;
@@ -150,13 +150,13 @@ function ChatPane({
   eventId: string;
   chatId: string;
   onActivity?: () => void;
-  onState?: (state: TableState) => void;
+  onState?: (state: ConversationState) => void;
 }) {
   // One WebSocket per open chat. The upgrade goes through the event hub,
   // which resolves the chat ID; the chat's own DO then owns the socket,
   // so the hub is not on the message path.
   const basePath = `agents/project-hub/${encodeURIComponent(eventId)}/chats/${encodeURIComponent(chatId)}`;
-  const agent = useAgent<TableState>({
+  const agent = useAgent<ConversationState>({
     agent: "group-chat",
     // Ignored for the URL, which `basePath` sets, but `useAgentChat` keys its
     // message cache by agent and name. Without it every routed chat is
@@ -206,7 +206,7 @@ function ChatPane({
           <Empty
             icon={<ChatCircleIcon size={24} />}
             title="Connecting…"
-            description="This table's Durable Object is waking up."
+            description="This conversation's Durable Object is waking up."
           />
         ) : (
           messages.map((message) => {
@@ -304,8 +304,8 @@ function ChatPane({
 
 /**
  * The host's console: their own private thread, the QR code that spawns
- * tables, and the tables that have joined. Listing and search read only the
- * hub, so no table's Durable Object wakes for the sidebar.
+ * conversations, and the conversations that have joined. Listing and search
+ * read only the hub, so no conversation's Durable Object wakes for the sidebar.
  */
 function HostView({ eventId }: { eventId: string }) {
   const refresh = useRef<() => void>(undefined);
@@ -348,8 +348,8 @@ function HostView({ eventId }: { eventId: string }) {
   );
 
   // The host's own thread is in the catalog like any other chat; it just
-  // does not belong in the list of tables.
-  const tables = chats.filter((chat) => chat.metadata?.kind !== "host");
+  // does not belong in the list of conversations.
+  const conversations = chats.filter((chat) => chat.metadata?.kind !== "host");
 
   return (
     <div className="flex h-screen flex-col">
@@ -357,7 +357,7 @@ function HostView({ eventId }: { eventId: string }) {
         <div className="flex items-center gap-2">
           <Text bold>Host console</Text>
           <Badge variant="secondary">event {eventId}</Badge>
-          <Badge variant="secondary">{tables.length} tables</Badge>
+          <Badge variant="secondary">{conversations.length} conversations</Badge>
           {model && <Badge variant="secondary">{model}</Badge>}
         </div>
         <ModeToggle />
@@ -368,9 +368,9 @@ function HostView({ eventId }: { eventId: string }) {
           <div className="flex items-center gap-2 p-3">
             <Input
               value={query}
-              aria-label="Search all tables"
+              aria-label="Search all conversations"
               onChange={(event) => setQuery(event.currentTarget.value)}
-              placeholder="Search all tables…"
+              placeholder="Search all conversations…"
               className="flex-1"
             />
             <Button
@@ -398,16 +398,16 @@ function HostView({ eventId }: { eventId: string }) {
                 </Text>
               </button>
             )}
-            {tables.length === 0 ? (
+            {conversations.length === 0 ? (
               <div className="p-4">
                 <Text size="sm" variant="secondary">
                   {query
-                    ? "No tables match — the search ran over the hub's index only."
-                    : "No tables yet. Each scan of the code creates one, in its own Durable Object."}
+                    ? "No conversations match — the search ran over the hub's index only."
+                    : "No conversations yet. Each scan of the code creates one, in its own Durable Object."}
                 </Text>
               </div>
             ) : (
-              tables.map((chat) => (
+              conversations.map((chat) => (
                 <div
                   key={chat.id}
                   className={`group flex w-full items-center justify-between pr-2 hover:bg-kumo-elevated ${
@@ -421,7 +421,7 @@ function HostView({ eventId }: { eventId: string }) {
                   >
                     <div className="truncate">
                       <Text size="sm" bold>
-                        {chat.metadata?.title ?? "New table"}
+                        {chat.metadata?.title ?? "New conversation"}
                       </Text>
                     </div>
                     <div className="truncate">
@@ -433,7 +433,7 @@ function HostView({ eventId }: { eventId: string }) {
                   <Button
                     variant="ghost"
                     shape="square"
-                    aria-label="Delete table"
+                    aria-label="Delete conversation"
                     className="opacity-0 focus:opacity-100 group-hover:opacity-100"
                     onClick={() => void deleteChat(chat.id)}
                     icon={<TrashIcon size={14} />}
@@ -472,12 +472,14 @@ function HostView({ eventId }: { eventId: string }) {
   );
 }
 
-/** One table's device: its own chat, and nothing else. */
+/** One conversation's device: its own chat, and nothing else. */
 function GroupView({ eventId, chatId }: { eventId: string; chatId: string }) {
-  const [table, setTable] = useState<TableState | null>(null);
-  // Each scan of the join code is one device, so a table is always one device
-  // however many people share it.
-  const people = table?.participants;
+  const [conversation, setConversation] = useState<ConversationState | null>(
+    null
+  );
+  // Each scan of the join code is one device, so a conversation is always one
+  // device however many people share it.
+  const people = conversation?.participants;
   const subtitle = people
     ? `${people} ${people === 1 ? "participant" : "participants"} (1 device)`
     : "1 device";
@@ -485,7 +487,9 @@ function GroupView({ eventId, chatId }: { eventId: string; chatId: string }) {
     <div className="flex h-screen flex-col">
       <header className="flex items-center justify-between border-b border-kumo-line px-4 py-3">
         <div className="flex flex-col">
-          <Text bold>{table?.name ?? `Table ${chatId.slice(0, 8)}`}</Text>
+          <Text bold>
+            {conversation?.name ?? `Conversation ${chatId.slice(0, 8)}`}
+          </Text>
           <Text size="xs" variant="secondary">
             {subtitle}
           </Text>
@@ -493,20 +497,20 @@ function GroupView({ eventId, chatId }: { eventId: string; chatId: string }) {
         <ModeToggle />
       </header>
       <main className="flex min-h-0 flex-1 flex-col">
-        <ChatPane eventId={eventId} chatId={chatId} onState={setTable} />
+        <ChatPane eventId={eventId} chatId={chatId} onState={setConversation} />
       </main>
     </div>
   );
 }
 
 /**
- * What the QR code points at. Spawns this table's chat and hands the device
- * straight to it, so the participant never sees a join screen.
+ * What the QR code points at. Spawns this conversation's chat and hands the
+ * device straight to it, so the participant never sees a join screen.
  */
 function JoinView({ eventId }: { eventId: string }) {
   const { hub, api } = useHub(eventId);
   // One chat per scan: without this, a re-render before navigation lands
-  // would leave an orphan table in the host's sidebar.
+  // would leave an orphan conversation in the host's sidebar.
   const claimed = useRef(false);
 
   useEffect(() => {
@@ -522,7 +526,7 @@ function JoinView({ eventId }: { eventId: string }) {
       <Empty
         icon={<ChatCircleIcon size={24} />}
         title="Joining…"
-        description="Setting up a Durable Object for this table."
+        description="Setting up a Durable Object for this conversation."
       />
     </div>
   );

@@ -13,7 +13,7 @@ Kimi K2 through the AI binding, no keys) or `openrouter` (needs
 
 ## Speech-to-text providers
 
-Table calls are transcribed by the provider named in `STT_PROVIDER`
+Conversation calls are transcribed by the provider named in `STT_PROVIDER`
 (`.dev.vars`; see `.dev.vars.sample` and `src/stt.ts`):
 
 | `STT_PROVIDER` | Runs on | Trade-off |

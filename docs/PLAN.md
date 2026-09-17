@@ -54,7 +54,7 @@ thesis is "the framework tells you how to build this," so inventing an
 architecture would argue against our own case.
 
 ```
-ProjectHub "event-id"  (plain DurableObject)     GroupChat  (one Agent per table)
+ProjectHub "event-id"  (plain DurableObject)     GroupChat  (one Agent per conversation)
 ┌──────────────────────────────────┐             ┌─────────────────────────────┐
 │ RoutedAgents route "chats"       │  forward    │ own SQLite: messages         │
 │  id → opaque physical name,      │────────────▶│ own WebSocket, own alarms    │
@@ -69,7 +69,7 @@ ProjectHub "event-id"  (plain DurableObject)     GroupChat  (one Agent per table
 | Name | What it is |
 |---|---|
 | `ProjectHub` | Plain `DurableObject`, one per event/project. Owns the catalog of chats, routes to them, holds pushed metadata for listing and search. **Not** an `Agent`. |
-| `GroupChat` | One routed Agent per table/group. Extends `ChatAgent`. |
+| `GroupChat` | One routed Agent per conversation/group. Extends `ChatAgent`. |
 | `ChatAgent` | Our composed base class: `withVoiceInput(AIChatAgent)`. Both `GroupChat` and the host's private thread extend it. |
 | `HostThread` | The host's private chat. Extends `ChatAgent`, owned and routed by `ProjectHub` like any other chat, flagged as the admin one. |
 
@@ -78,7 +78,7 @@ ProjectHub "event-id"  (plain DurableObject)     GroupChat  (one Agent per table
 The host does have a thread to render — but that thread is a chat the hub owns,
 not the hub itself. Keeping them separate, for three reasons:
 
-1. **Contention.** Every join, every metadata push from every table, and every
+1. **Contention.** Every join, every metadata push from every conversation, and every
    listing/search routes through the hub. If the hub also ran a streaming LLM
    turn for the host, all of that would contend with inference on one Durable
    Object. The example's stated reason for a plain-DO hub is that chat frames
@@ -116,18 +116,18 @@ concern — **Slice 3 decides it by what it pushes.**
 
 | | Mechanism | Cost | Use for |
 |---|---|---|---|
-| **Breadth** | `GroupChat` pushes into `ChatMeta` via `recordChatActivity` on every message; host reads hub state only | No chat wakes; scales to a full room | "What's happening across the tables?" |
-| **Depth** | `chats.get(id)` returns a typed `GroupChat` stub; RPC straight into it | Wakes that one chat | "Tell me more about table 3" |
+| **Breadth** | `GroupChat` pushes into `ChatMeta` via `recordChatActivity` on every message; host reads hub state only | No chat wakes; scales to a full room | "What's happening across the conversations?" |
+| **Depth** | `chats.get(id)` returns a typed `GroupChat` stub; RPC straight into it | Wakes that one chat | "Tell me more about conversation 3" |
 
 **Slice 3 must widen `ChatMeta`** beyond `{title, lastMessage, seq}` to carry a
 rolling transcript excerpt (or running summary), or the host can only reach
-transcripts by drilling in one table at a time. The existing `seq` fence in
+transcripts by drilling in one conversation at a time. The existing `seq` fence in
 `recordChatActivity` already makes streaming pushes safe against reordering.
 
 **Writing into another chat** (later, not today): the hub already RPCs into a
 chat during `createChat` (`chat.init(...)`). The same typed stub reaches a
 `GroupChat` method that calls `saveMessages` — which persists *and* broadcasts,
-so a phone at that table sees the message arrive live. Path:
+so a phone at that conversation sees the message arrive live. Path:
 `HostThread` tool → `env.ProjectHub.getByName(event)` → `chats.get(id)` → inject.
 
 This is the `pizzo` "one document, two hands" pattern from `docs/BRAINSTORM.md` — the
@@ -238,7 +238,7 @@ Each is independently demoable. Whenever we stop, there is something to show.
 - **Done when:** a phone on the router scans and lands in a live group chat.
   ⚠️ **Partially met — verified on `localhost` only.** The join flow itself is
   proven: `/join/{event}` creates a `GroupChat` and redirects to
-  `/g/{event}/{chatId}`, the table talks, and the host console lists it from hub
+  `/g/{event}/{chatId}`, the conversation talks, and the host console lists it from hub
   metadata alone. The QR encodes `location.origin`, so on localhost it encodes a
   URL no phone can reach.
 - **The phone path is blocked on an insecure-context problem, not on our code.**
@@ -261,12 +261,12 @@ Each is independently demoable. Whenever we stop, there is something to show.
   supply one. Without it, `model.ts` silently falls back to Workers AI, which is
   an acceptable demo path.
 - Onboarding flow as agent messages, using echo's copy: welcome → intent choice →
-  number of speakers → privacy consent → table name → mic check → go live.
+  number of speakers → privacy consent → conversation name → mic check → go live.
   **Text answers only**, no widget buttons.
 - **Done when:** a participant completes onboarding by typing.
   ✅ **Verified 2026-09-17 ~04:55** on `localhost:5173`, running on OpenRouter
-  (`openrouter/free`): a joined table walked all seven steps in echo's copy by
-  typing, and the host sidebar showed the table's title and latest message.
+  (`openrouter/free`): a joined conversation walked all seven steps in echo's copy by
+  typing, and the host sidebar showed the conversation's title and latest message.
 - **§5's first risk is retired.** `withVoiceInput(AIChatAgent)` typechecks and
   runs as a `RoutedAgents` target; no fallback to a plain `Agent` was needed.
 - What landed differently from the bullets above:
@@ -291,7 +291,7 @@ Each is independently demoable. Whenever we stop, there is something to show.
 - `withVoiceInput` + `WorkersAINova3STT`; transcript accumulates during the call.
 - Ending the call posts a voice-call message into the thread carrying the transcript.
 - **Widen `ChatMeta` to push a rolling transcript excerpt to the hub** as it
-  accumulates, so the host can read across tables without waking them (see §2).
+  accumulates, so the host can read across conversations without waking them (see §2).
 - **Done when:** speak, stop, see the transcript in the thread.
   ✅ **Verified 2026-09-17 ~05:10** with Nova 3: synthesized speech streamed
   over the call protocol, and separately a fake-microphone Chromium session
@@ -305,7 +305,7 @@ Each is independently demoable. Whenever we stop, there is something to show.
     the agent doesn't answer a transcript unprompted.
   - `ChatMeta.seq` now counts pushes rather than messages: transcript updates
     push without adding a message, and the hub's fence rejected them otherwise.
-  - The table view's controls could fall below the fold; the chat pane now
+  - The conversation view's controls could fall below the fold; the chat pane now
     sizes with flex rather than `h-full` inside a flex item.
 - **Known limitation, not fixed:** the server ignores `end_of_speech` and drops
   speech not yet followed by a pause when the call ends. Pause a beat before
@@ -327,8 +327,8 @@ Each is independently demoable. Whenever we stop, there is something to show.
 ### Slice 5 — Host cross-chat view (~45m)
 
 - A tool over the hub's `searchChats` / `listChats` metadata, so the host thread
-  can answer "what's happening at the tables?" without waking any chat.
-- **Done when:** the host thread answers a cross-table question.
+  can answer "what's happening at the conversations?" without waking any chat.
+- **Done when:** the host thread answers a cross-conversation question.
 - **The host thread does no onboarding.** It opens with a fixed greeting
   ("Hello, host!") posted without a model turn, and its prompt is about the
   room, not the participant flow. (Added 2026-09-17.)
