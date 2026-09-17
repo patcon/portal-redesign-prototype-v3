@@ -237,8 +237,9 @@ Each is independently demoable. Whenever we stop, there is something to show.
 - Scanning creates a new `GroupChat` via the hub and lands the phone in it.
 - **Done when:** a phone on the router scans and lands in a live group chat.
   ⚠️ **Partially met — verified on `localhost` only.** The join flow itself is
-  proven: `/join/{event}` creates a `GroupChat` and redirects to
-  `/g/{event}/{chatId}`, the conversation talks, and the host console lists it from hub
+  proven: `/events/{event}` creates a `GroupChat` and redirects to
+  `/events/{event}/group/{chatId}`, the conversation talks, and the host
+  console (`/events/{event}/secret`) lists it from hub
   metadata alone. The QR encodes `location.origin`, so on localhost it encodes a
   URL no phone can reach.
 - **The phone path is blocked on an insecure-context problem, not on our code.**

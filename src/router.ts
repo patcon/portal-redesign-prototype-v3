@@ -1,6 +1,7 @@
 /**
- * The whole router. Three routes, no dependency: the host's console, the
- * join link a QR code points at, and one conversation's chat.
+ * The whole router. Three routes, no dependency: the join link a QR code
+ * points at, the host's console hidden behind `/secret`, and one
+ * conversation's chat.
  */
 
 export type Route =
@@ -9,22 +10,23 @@ export type Route =
   | { name: "group"; eventId: string; chatId: string };
 
 export function parseRoute(pathname: string): Route | null {
-  const [, head, a, b] = pathname.split("/");
-  if (head === "host" && a) return { name: "host", eventId: a };
-  if (head === "join" && a) return { name: "join", eventId: a };
-  if (head === "g" && a && b) return { name: "group", eventId: a, chatId: b };
+  const [, head, eventId, kind, chatId] = pathname.split("/");
+  if (head !== "events" || !eventId) return null;
+  if (!kind) return { name: "join", eventId };
+  if (kind === "secret" && !chatId) return { name: "host", eventId };
+  if (kind === "group" && chatId) return { name: "group", eventId, chatId };
   return null;
 }
 
 export function hrefFor(route: Route): string {
-  const event = encodeURIComponent(route.eventId);
+  const event = `/events/${encodeURIComponent(route.eventId)}`;
   switch (route.name) {
-    case "host":
-      return `/host/${event}`;
     case "join":
-      return `/join/${event}`;
+      return event;
+    case "host":
+      return `${event}/secret`;
     case "group":
-      return `/g/${event}/${encodeURIComponent(route.chatId)}`;
+      return `${event}/group/${encodeURIComponent(route.chatId)}`;
   }
 }
 
