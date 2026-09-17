@@ -6,8 +6,8 @@
 
 import { routeAgentRequest } from "agents";
 
-export { GroupChat } from "./server/group-chat";
-export { ProjectHub } from "./server/project-hub";
+export { GroupChat } from "./group-chat";
+export { ProjectHub } from "./project-hub";
 
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
