@@ -31,7 +31,13 @@ function describeConversations(entries: readonly { id: string; metadata: ChatMet
  * does, so a routed chat gets message persistence, streaming and tools for
  * free rather than through a second hand-written chat path.
  */
-const ChatAgent = withVoiceInput(AIChatAgent);
+const ChatAgent = withVoiceInput(AIChatAgent, {
+  // Voice diagnostics are off unless asked for. With this on, the mixin sends
+  // `call.ended` (with its `reason`), `stt.*` and per-turn events down the
+  // voice socket, and the client prints them to the BROWSER console — they
+  // never reach the wrangler console.
+  diagnostics: { browserConsole: true },
+});
 
 /** The text of a UI message, flattened for the hub's index. */
 function messageText(message: UIMessage): string {
