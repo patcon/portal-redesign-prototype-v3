@@ -329,6 +329,9 @@ Each is independently demoable. Whenever we stop, there is something to show.
 - A tool over the hub's `searchChats` / `listChats` metadata, so the host thread
   can answer "what's happening at the tables?" without waking any chat.
 - **Done when:** the host thread answers a cross-table question.
+- **The host thread does no onboarding.** It opens with a fixed greeting
+  ("Hello, host!") posted without a model turn, and its prompt is about the
+  room, not the participant flow. (Added 2026-09-17.)
 
 ### Slice 6 — Measure (~15m) — NOT OPTIONAL
 

@@ -6,10 +6,17 @@ import { WebSockets } from "agents/websockets";
 import { withVoiceInput } from "agents/voice";
 import { AIChatAgent } from "@cloudflare/ai-chat";
 import type { UIMessage } from "ai";
-import { convertToModelMessages, streamText } from "ai";
+import {
+  convertToModelMessages,
+  jsonSchema,
+  stepCountIs,
+  streamText,
+  tool
+} from "ai";
 import { getModel, modelLabel } from "./model";
 import { getTranscriber, sttLabel } from "./stt";
 import { ONBOARDING_INSTRUCTIONS, WELCOME_MESSAGE } from "./onboarding";
+import { HOST_INSTRUCTIONS, HOST_WELCOME_MESSAGE } from "./host";
 import { MAX_QUERY } from "./shared";
 
 /**
@@ -66,7 +73,22 @@ const TRANSCRIPT_EXCERPT = 600;
 type ChatOwner = {
   eventId: string;
   chatId: string;
+  kind: ChatKind;
 };
+
+/** A table as the host's tools see it: the hub's pushed metadata, no more. */
+function describeTables(
+  entries: readonly { id: string; metadata: ChatMeta | null }[]
+) {
+  return entries
+    .filter((entry) => entry.metadata?.kind !== "host")
+    .map((entry, index) => ({
+      table: index + 1,
+      title: entry.metadata?.title ?? null,
+      lastMessage: entry.metadata?.lastMessage ?? null,
+      recentCallTranscript: entry.metadata?.transcript ?? null
+    }));
+}
 
 /** Runtime guards: every method here is reachable from a browser. */
 function assertText(value: unknown, max: number, what: string): string {
@@ -119,7 +141,7 @@ export class GroupChat extends ChatAgent<Env> {
 
   async init(owner: ChatOwner): Promise<void> {
     await this.ctx.storage.put("owner", owner);
-    // Onboarding opens itself: the participant arrives to a question rather
+    // The host's thread just says hello. A table's onboarding opens itself: the participant arrives to a question rather
     // than an empty box. `persistMessages` rather than `saveMessages`,
     // because `saveMessages` drives a model turn — which would have the
     // agent answer its own greeting before anyone has typed anything.
@@ -127,18 +149,58 @@ export class GroupChat extends ChatAgent<Env> {
       {
         id: crypto.randomUUID(),
         role: "assistant",
-        parts: [{ type: "text", text: WELCOME_MESSAGE }]
+        parts: [
+          {
+            type: "text",
+            text: owner.kind === "host" ? HOST_WELCOME_MESSAGE : WELCOME_MESSAGE
+          }
+        ]
       }
     ]);
   }
 
   async onChatMessage() {
+    const owner = await this.ctx.storage.get<ChatOwner>("owner");
+    const isHost = owner?.kind === "host";
     const result = streamText({
       model: getModel(this.env, { sessionAffinity: this.sessionAffinity }),
-      system: ONBOARDING_INSTRUCTIONS,
-      messages: await convertToModelMessages(this.messages)
+      system: isHost ? HOST_INSTRUCTIONS : ONBOARDING_INSTRUCTIONS,
+      messages: await convertToModelMessages(this.messages),
+      ...(isHost && owner && { tools: this.#hostTools(owner.eventId) }),
+      // Room for a tool call and the answer that reads its result.
+      stopWhen: stepCountIs(5)
     });
     return result.toUIMessageStreamResponse();
+  }
+
+  /**
+   * The host's view across the room. Both tools read only the hub's pushed
+   * metadata, so asking "what's happening?" wakes no table.
+   */
+  #hostTools(eventId: string) {
+    const hub = this.env.ProjectHub.getByName(eventId);
+    return {
+      listTables: tool({
+        description:
+          "List every table at the event with its latest message and the tail of its most recent voice call.",
+        inputSchema: jsonSchema<Record<string, never>>({
+          type: "object",
+          properties: {}
+        }),
+        execute: async () => describeTables(await hub.listChats())
+      }),
+      searchTables: tool({
+        description:
+          "Find tables whose title, latest message or call transcript mentions a word or phrase.",
+        inputSchema: jsonSchema<{ query: string }>({
+          type: "object",
+          properties: { query: { type: "string" } },
+          required: ["query"]
+        }),
+        execute: async ({ query }) =>
+          describeTables(await hub.searchChats(query))
+      })
+    };
   }
 
   onCallStart(connection: Connection): void {
@@ -307,7 +369,7 @@ export class ProjectHub extends DurableObject<Env> {
       // get() resolves the entry to an initialized, typed stub for RPC.
       const chat = await this.chats.get(id);
       if (!chat) throw new Error(`Chat ${id} vanished during creation`);
-      await chat.init({ eventId: this.lifecycle.name, chatId: id });
+      await chat.init({ eventId: this.lifecycle.name, chatId: id, kind });
     } catch (error) {
       // The catalog row is uninitialized ownership without a matching
       // one-time init call, so it would never learn the chat pushes its
