@@ -136,7 +136,14 @@ function ChatPane({
   // which resolves the chat ID; the chat's own DO then owns the socket,
   // so the hub is not on the message path.
   const basePath = `agents/project-hub/${encodeURIComponent(eventId)}/chats/${encodeURIComponent(chatId)}`;
-  const agent = useAgent({ agent: "group-chat", basePath });
+  const agent = useAgent({
+    agent: "group-chat",
+    // Ignored for the URL, which `basePath` sets, but `useAgentChat` keys its
+    // message cache by agent and name. Without it every routed chat is
+    // "default", and switching chats keeps showing the first one opened.
+    name: chatId,
+    basePath
+  });
   const call = useCall(basePath);
   const { messages, sendMessage, status } = useAgentChat({
     agent,
@@ -147,10 +154,14 @@ function ChatPane({
   const tail = useRef<HTMLDivElement>(null);
 
   // The host's sidebar reads pushed metadata, which only lands once a turn
-  // finishes — so refresh on the streaming edge, not on every token.
+  // finishes — so refresh on the streaming edge, not on every token. Held in
+  // a ref: a fresh callback each render would otherwise re-fire this effect,
+  // refresh the list, re-render, and loop for as long as a chat is open.
+  const activity = useRef(onActivity);
+  activity.current = onActivity;
   useEffect(() => {
-    if (!isStreaming) onActivity?.();
-  }, [isStreaming, onActivity]);
+    if (!isStreaming) activity.current?.();
+  }, [isStreaming]);
 
   useEffect(() => {
     tail.current?.scrollIntoView({ block: "nearest" });
