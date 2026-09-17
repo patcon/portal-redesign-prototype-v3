@@ -98,12 +98,10 @@ export function ChatPane({
     [isStreaming, sendMessage],
   );
 
-  // What the SDK's voice client does not track for us. `startedAt` is the clock both
-  // call surfaces count from, and `muted` is mirrored here only so the banner's held
-  // state agrees with the toggle on the call screen — `useCall` has start and stop and
-  // nothing in between, so this does not yet gate the microphone.
+  // What the SDK's voice client does not track for us: `startedAt`, the clock both call
+  // surfaces count from, and which screen the call is showing on. Mute is *not* here —
+  // it belongs to the voice client, which is what gates the microphone.
   const [startedAt, setStartedAt] = useState<Date | null>(null);
-  const [muted, setMuted] = useState(false);
   const [onCallScreen, setOnCallScreen] = useState(false);
   // Synchronising with an external system — the voice socket — which is the one
   // thing effects are for. `call.inCall` is pushed from the transport, so there is
@@ -116,7 +114,6 @@ export function ChatPane({
       setOnCallScreen(true);
     } else {
       setStartedAt(null);
-      setMuted(false);
       setOnCallScreen(false);
     }
   }, [call.inCall]);
@@ -151,7 +148,7 @@ export function ChatPane({
             {call.inCall && !onCallScreen && (
               <LiveCallBanner
                 startedAt={startedAt ?? undefined}
-                muted={muted}
+                muted={call.muted}
                 onReturn={openCall}
               />
             )}
@@ -171,8 +168,8 @@ export function ChatPane({
             title={title}
             startedAt={startedAt ?? undefined}
             transcript={transcript}
-            muted={muted}
-            onMutedChange={setMuted}
+            muted={call.muted}
+            onMutedChange={call.toggleMute}
             onMinimize={() => setOnCallScreen(false)}
             onHangUp={call.stop}
           />

@@ -67,6 +67,7 @@ export function useCall(basePath: string) {
   const [heard, setHeard] = useState("");
   const [interim, setInterim] = useState<string | null>(null);
   const [level, setLevel] = useState(0);
+  const [muted, setMuted] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -88,6 +89,7 @@ export function useCall(basePath: string) {
         ),
       interimtranscript: () => setInterim(voice.interimTranscript),
       audiolevelchange: () => setLevel(voice.audioLevel),
+      mutechange: () => setMuted(voice.isMuted),
       error: () => setError(voice.error),
     } as const;
     for (const [name, listener] of Object.entries(sync)) {
@@ -104,9 +106,25 @@ export function useCall(basePath: string) {
   const start = useCallback(() => {
     setHeard("");
     setError(null);
-    void client.current?.startCall();
+    const voice = client.current;
+    if (!voice) return;
+    // A call always begins live. The voice client outlives any one call and never
+    // clears its own mute, so a call ended while muted would otherwise hand its
+    // mute to the next one — which, now that muting really does gate the
+    // microphone, would be a call that silently transcribes nothing.
+    if (voice.isMuted) voice.toggleMute();
+    void voice.startCall();
   }, []);
   const stop = useCallback(() => client.current?.endCall(), []);
+  /**
+   * Mute really does stop the transcription. The voice client drops microphone
+   * frames instead of sending them while muted, and if the mute lands in the
+   * middle of an utterance it sends `end_of_speech` so the server transcribes
+   * what it already has rather than waiting for a silence that can never arrive
+   * — no frames means no silence detection. So `muted` is the client's own state
+   * echoed back, never a separate flag the UI keeps.
+   */
+  const toggleMute = useCallback(() => client.current?.toggleMute(), []);
 
-  return { inCall, heard, interim, level, error, start, stop };
+  return { inCall, heard, interim, level, muted, error, start, stop, toggleMute };
 }
