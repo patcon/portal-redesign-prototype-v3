@@ -8,6 +8,7 @@
     "start": "vite dev --host",
     "deploy": "vite build && wrangler deploy",
     "typecheck": "tsc --noEmit",
+    "test": "vitest run",
     "types": "wrangler types env.d.ts --include-runtime false",
     "stt:setup": "bash scripts/setup-local-whisper.sh",
     "stt:server": "./.whisperfile/whisper-tiny.en.llamafile --server --port 8080 --no-timestamps"
@@ -36,6 +37,7 @@
     "tailwindcss": "^4.3.2",
     "typescript": "^6.0.3",
     "vite": "^8.1.0",
+    "vitest": "^5.0.1",
     "wrangler": "^4.115.0"
   },
   "pnpm": {
