@@ -1,9 +1,21 @@
 # Copy to `.dev.vars` (which wrangler reads in local dev) and fill in.
 # Leave unset to run entirely on Workers AI — no keys needed.
 
-# Optional: route model calls through OpenRouter instead of Workers AI.
+# Chat model provider. Default: workers-ai.
+#   workers-ai  Workers AI (Kimi K2) through the AI binding — no keys needed.
+#   openrouter  OpenRouter; needs OPENROUTER_API_KEY. OPENROUTER_MODEL defaults
+#               to openrouter/free, which is capped at 50 requests a day
+#               without credits — switch back to workers-ai when it runs out.
 # Get a key at https://openrouter.ai/keys
+# WORKERS_AI_MODEL defaults to @cf/moonshotai/kimi-k2.7-code, which needs a
+# paid Workers plan ("5035: not available on the Workers Free plan").
+# WORKERS_AI_MODEL=@cf/meta/llama-3.3-70b-instruct-fp8-fast
+# MODEL_PROVIDER=openrouter
 # OPENROUTER_API_KEY=<your-openrouter-api-key>
+# OPENROUTER_MODEL=openrouter/free
+# With your own Anthropic key added to OpenRouter (BYOK), a Claude model bills
+# to that key instead of the free tier:
+# OPENROUTER_MODEL=anthropic/claude-haiku-4.5
 
 # Speech-to-text provider for table calls. Default: nova3.
 #   nova3          Workers AI Deepgram Nova 3 — best quality, live interim text.

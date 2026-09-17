@@ -4,6 +4,13 @@
 > `?transport=capnweb` toggle, which this prototype removed. Slice 6 replaces
 > this file with the project README and the LOC/dependency numbers.
 
+## Chat model provider
+
+`MODEL_PROVIDER` in `.dev.vars` picks the chat model: `workers-ai` (default,
+Kimi K2 through the AI binding, no keys) or `openrouter` (needs
+`OPENROUTER_API_KEY`; `OPENROUTER_MODEL` defaults to `openrouter/free`, capped at
+50 requests a day). Restart `pnpm start` after changing it.
+
 ## Speech-to-text providers
 
 Table calls are transcribed by the provider named in `STT_PROVIDER`

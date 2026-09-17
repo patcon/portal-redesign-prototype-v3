@@ -28,6 +28,9 @@
   ],
   // Speech-to-text provider: nova3 | flux | whisper-local. See src/stt.ts.
   "vars": {
+    "MODEL_PROVIDER": "workers-ai",
+    "OPENROUTER_MODEL": "",
+    "WORKERS_AI_MODEL": "",
     "STT_PROVIDER": "nova3",
     "STT_WHISPER_URL": ""
   },
