@@ -109,6 +109,31 @@ copy.
 3. **Model wiring.** Lift `examples/playground/src/model.ts` verbatim — already
    OpenRouter-with-Workers-AI-fallback, written by Patrick on this branch.
 
+### How the host agent sees and touches the other chats
+
+Two tiers, both already plumbed by the example. The choice is not a later
+concern — **Slice 3 decides it by what it pushes.**
+
+| | Mechanism | Cost | Use for |
+|---|---|---|---|
+| **Breadth** | `GroupChat` pushes into `ChatMeta` via `recordChatActivity` on every message; host reads hub state only | No chat wakes; scales to a full room | "What's happening across the tables?" |
+| **Depth** | `chats.get(id)` returns a typed `GroupChat` stub; RPC straight into it | Wakes that one chat | "Tell me more about table 3" |
+
+**Slice 3 must widen `ChatMeta`** beyond `{title, lastMessage, seq}` to carry a
+rolling transcript excerpt (or running summary), or the host can only reach
+transcripts by drilling in one table at a time. The existing `seq` fence in
+`recordChatActivity` already makes streaming pushes safe against reordering.
+
+**Writing into another chat** (later, not today): the hub already RPCs into a
+chat during `createChat` (`chat.init(...)`). The same typed stub reaches a
+`GroupChat` method that calls `saveMessages` — which persists *and* broadcasts,
+so a phone at that table sees the message arrive live. Path:
+`HostThread` tool → `env.ProjectHub.getByName(event)` → `chats.get(id)` → inject.
+
+This is the `pizzo` "one document, two hands" pattern from `BRAINSTORM.md` — the
+agent acting on the same surface the user acts on — and it is also the seam where
+admin-only forwarded attachments eventually live. Nothing here forecloses it.
+
 ### Known consequences, accepted
 
 - **Workers AI proxies to remote even under `wrangler dev`.** STT will not run
@@ -214,6 +239,8 @@ Each is independently demoable. Whenever we stop, there is something to show.
 
 - `withVoiceInput` + `WorkersAINova3STT`; transcript accumulates during the call.
 - Ending the call posts a voice-call message into the thread carrying the transcript.
+- **Widen `ChatMeta` to push a rolling transcript excerpt to the hub** as it
+  accumulates, so the host can read across tables without waking them (see §2).
 - **Done when:** speak, stop, see the transcript in the thread.
 
 ### Slice 4 — Agent reads the transcript (~30m)
