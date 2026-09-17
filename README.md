@@ -13,6 +13,13 @@ pnpm install
 pnpm start          # http://localhost:5173 → redirects to a fresh event
 ```
 
+`pnpm install` needs a checkout of [Cloudflare's `agents` monorepo] beside this
+one, at `../agents`: this prototype tracks unreleased work in the Agents SDK, so
+`agents` and `@cloudflare/ai-chat` are `link:` dependencies rather than versions
+on npm. Without it, install fails.
+
+[Cloudflare's `agents` monorepo]: https://github.com/cloudflare/agents
+
 Opening `/` mints a random event id and sends you to that event's host console.
 Serve on a LAN address (`pnpm start` already passes `--host`) and the QR code
 encodes that address, so an event runs from a laptop on a local router with no
@@ -55,8 +62,8 @@ pushes its own title, latest message and call transcript back into the hub
 (`recordChatActivity`), fenced by a per-chat sequence number inside
 `blockConcurrencyWhile` so a delayed push cannot overwrite a newer one. That
 pushed metadata is what the sidebar renders and what the host's agent tools
-read — which is how "what's happening at the tables?" costs one Durable Object
-read instead of N.
+read — which is how "what's happening in the conversations?" costs one Durable
+Object read instead of N.
 
 The host's private thread is a `GroupChat` like any other, distinguished only
 by `kind: "host"`. One chat implementation, not two.
