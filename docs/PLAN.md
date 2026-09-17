@@ -264,6 +264,27 @@ Each is independently demoable. Whenever we stop, there is something to show.
   number of speakers → privacy consent → table name → mic check → go live.
   **Text answers only**, no widget buttons.
 - **Done when:** a participant completes onboarding by typing.
+  ✅ **Verified 2026-09-17 ~04:55** on `localhost:5173`, running on OpenRouter
+  (`openrouter/free`): a joined table walked all seven steps in echo's copy by
+  typing, and the host sidebar showed the table's title and latest message.
+- **§5's first risk is retired.** `withVoiceInput(AIChatAgent)` typechecks and
+  runs as a `RoutedAgents` target; no fallback to a plain `Agent` was needed.
+- What landed differently from the bullets above:
+  - `model.ts` keeps only `getModel` — the playground's TTS half is unused here.
+    It also exports `modelLabel`, shown in the host header, since "which model
+    is this?" is a demo question.
+  - The key lives in `.dev.vars` (what wrangler reads), with a committed
+    `.dev.vars.sample`. A `.env` is *not* read by the worker and would have
+    silently fallen back to Workers AI.
+  - The welcome is seeded with `persistMessages`, not `saveMessages`:
+    `saveMessages` always drives a model turn, so the agent answered its own
+    greeting before anyone typed.
+  - Metadata pushes to the hub moved into `onChatResponse` — once per finished
+    turn, not per streamed token. `seq` is the message count.
+  - The copy came from `useOnboardingCards.ts` and
+    `ParticipantOnboardingCards.tsx`; the portal's steps are welcome, what is
+    dembrane, speak your mind, solo or group, question time, privacy, mic check,
+    ready — a close but not exact match to the list above.
 
 ### Slice 3 — The call (~90m, highest risk)
 

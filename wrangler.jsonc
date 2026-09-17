@@ -26,6 +26,9 @@
       "new_sqlite_classes": ["ProjectHub", "GroupChat"]
     }
   ],
+  "secrets": {
+    "required": ["OPENROUTER_API_KEY"]
+  },
   "ai": {
     "binding": "AI"
   },

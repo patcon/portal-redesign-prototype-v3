@@ -9,6 +9,9 @@ dist/
 .wrangler/
 .dev.vars
 .dev.vars.*
+!.dev.vars.sample
+.env
+.env.*
 
 # Logs
 *.log

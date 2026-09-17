@@ -1,0 +1,6 @@
+# Copy to `.dev.vars` (which wrangler reads in local dev) and fill in.
+# Leave unset to run entirely on Workers AI — no keys needed.
+
+# Optional: route model calls through OpenRouter instead of Workers AI.
+# Get a key at https://openrouter.ai/keys
+# OPENROUTER_API_KEY=<your-openrouter-api-key>

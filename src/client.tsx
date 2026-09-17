@@ -19,6 +19,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { FormEvent } from "react";
 import { createRoot } from "react-dom/client";
 import { useAgent } from "agents/react";
+import { useAgentChat } from "@cloudflare/ai-chat/react";
 import type { RoutedAgentEntry } from "agents/routing";
 import qrcode from "qrcode-generator";
 import { hrefFor, navigate, parseRoute } from "./router";
@@ -43,6 +44,7 @@ type ChatMessage = {
 type HubApi = {
   createChat(): Promise<string>;
   ensureHostThread(): Promise<string>;
+  describeModel(): Promise<string>;
   joinEvent(): Promise<string>;
   listChats(): Promise<ChatEntry[]>;
   searchChats(query: string): Promise<ChatEntry[]>;
@@ -129,51 +131,37 @@ function ChatPane({
   // One WebSocket per open chat. The upgrade goes through the event hub,
   // which resolves the chat ID; the chat's own DO then owns the socket,
   // so the hub is not on the message path.
-  const chat = useAgent({
+  const agent = useAgent({
     agent: "group-chat",
     basePath: `agents/project-hub/${encodeURIComponent(eventId)}/chats/${encodeURIComponent(chatId)}`
   });
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const { messages, sendMessage, status } = useAgentChat({
+    agent,
+    experimental_throttle: 100
+  });
   const [draft, setDraft] = useState("");
-  const [busy, setBusy] = useState(false);
+  const isStreaming = status === "streaming" || status === "submitted";
+  const tail = useRef<HTMLDivElement>(null);
 
-  const refresh = useCallback(async () => {
-    setMessages((await chat.call("getMessages")) as ChatMessage[]);
-  }, [chat]);
+  // The host's sidebar reads pushed metadata, which only lands once a turn
+  // finishes — so refresh on the streaming edge, not on every token.
+  useEffect(() => {
+    if (!isStreaming) onActivity?.();
+  }, [isStreaming, onActivity]);
 
   useEffect(() => {
-    void refresh();
-  }, [refresh]);
+    tail.current?.scrollIntoView({ block: "end" });
+  }, [messages]);
 
   const send = useCallback(
-    async (event: FormEvent) => {
+    (event: FormEvent) => {
       event.preventDefault();
-      const text = draft.trim();
-      if (!text || busy) return;
-      setBusy(true);
+      const text = draft.trim().slice(0, MAX_TEXT);
+      if (!text || isStreaming) return;
       setDraft("");
-      try {
-        await chat.call("addMessage", ["user", text]);
-        try {
-          // No model is wired in yet — the "assistant" reply just proves
-          // both roles land in the chat's own SQLite. The prefix counts
-          // against the server's limit, so trim the echoed text to fit.
-          const prefix = `Echo from ${chatId.slice(0, 8)}: `;
-          await chat.call("addMessage", [
-            "assistant",
-            prefix + text.slice(0, MAX_TEXT - prefix.length)
-          ]);
-        } finally {
-          // The user's message is already stored; show it even if the
-          // demo reply failed.
-          await refresh();
-          onActivity?.();
-        }
-      } finally {
-        setBusy(false);
-      }
+      sendMessage({ role: "user", parts: [{ type: "text", text }] });
     },
-    [busy, chat, chatId, draft, onActivity, refresh]
+    [draft, isStreaming, sendMessage]
   );
 
   return (
@@ -182,25 +170,32 @@ function ChatPane({
         {messages.length === 0 ? (
           <Empty
             icon={<ChatCircleIcon size={24} />}
-            title="No messages yet"
-            description="Everything you send lives in this chat's own Durable Object."
+            title="Connecting…"
+            description="This table's Durable Object is waking up."
           />
         ) : (
-          messages.map((message, index) => (
-            <div
-              key={`${message.at}-${index}`}
-              className={`flex ${message.role === "user" ? "justify-end" : "justify-start"}`}
-            >
-              <Surface
-                className={`max-w-[80%] rounded-lg px-3 py-2 ${
-                  message.role === "user" ? "bg-kumo-brand/10" : ""
-                }`}
+          messages.map((message) => {
+            const text = message.parts
+              .map((part) => (part.type === "text" ? part.text : ""))
+              .join("");
+            if (!text) return null;
+            return (
+              <div
+                key={message.id}
+                className={`flex ${message.role === "user" ? "justify-end" : "justify-start"}`}
               >
-                <Text size="sm">{message.text}</Text>
-              </Surface>
-            </div>
-          ))
+                <Surface
+                  className={`max-w-[80%] rounded-lg px-3 py-2 whitespace-pre-wrap ${
+                    message.role === "user" ? "bg-kumo-brand/10" : ""
+                  }`}
+                >
+                  <Text size="sm">{text}</Text>
+                </Surface>
+              </div>
+            );
+          })
         )}
+        <div ref={tail} />
       </div>
       <form
         onSubmit={send}
@@ -210,13 +205,13 @@ function ChatPane({
           value={draft}
           aria-label="Message"
           onChange={(event) => setDraft(event.currentTarget.value)}
-          placeholder="Say something…"
+          placeholder={isStreaming ? "Thinking…" : "Say something…"}
           className="flex-1"
         />
         <Button
           type="submit"
           variant="primary"
-          disabled={busy || draft.trim() === ""}
+          disabled={isStreaming || draft.trim() === ""}
           icon={<PaperPlaneRightIcon size={16} />}
         >
           Send
@@ -235,6 +230,7 @@ function HostView({ eventId }: { eventId: string }) {
   const { hub, api } = useHub(eventId);
   const [chats, setChats] = useState<ChatEntry[]>([]);
   const [hostChatId, setHostChatId] = useState<string | null>(null);
+  const [model, setModel] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [activeId, setActiveId] = useState<string | null>(null);
 
@@ -249,6 +245,7 @@ function HostView({ eventId }: { eventId: string }) {
     if (!hub.identified) return;
     void (async () => {
       setHostChatId(await api.ensureHostThread());
+      setModel(await api.describeModel());
       await refreshChats();
     })();
   }, [api, hub.identified, refreshChats]);
@@ -278,6 +275,7 @@ function HostView({ eventId }: { eventId: string }) {
           <Text bold>Host console</Text>
           <Badge variant="secondary">event {eventId}</Badge>
           <Badge variant="secondary">{tables.length} tables</Badge>
+          {model && <Badge variant="secondary">{model}</Badge>}
         </div>
         <ModeToggle />
       </header>

@@ -1,15 +1,15 @@
 import { DurableObject, RpcTarget } from "cloudflare:workers";
-import {
-  Agent,
-  callable,
-  routeAgentRequest,
-  type Connection,
-  type WSMessage
-} from "agents";
+import { callable, routeAgentRequest } from "agents";
 import { Lifecycle } from "agents/lifecycle";
 import { RoutedAgents } from "agents/routing";
 import { WebSockets } from "agents/websockets";
-import { MAX_QUERY, MAX_TEXT } from "./shared";
+import { withVoiceInput } from "agents/voice";
+import { AIChatAgent } from "@cloudflare/ai-chat";
+import type { UIMessage } from "ai";
+import { convertToModelMessages, streamText } from "ai";
+import { getModel, modelLabel } from "./model";
+import { ONBOARDING_INSTRUCTIONS, WELCOME_MESSAGE } from "./onboarding";
+import { MAX_QUERY } from "./shared";
 
 /**
  * The recommended shape for "many chats per user": one top-level
@@ -54,12 +54,6 @@ type ChatMeta = {
   seq: number;
 };
 
-type ChatMessage = {
-  role: "user" | "assistant";
-  text: string;
-  at: number;
-};
-
 /** Recorded once by the owning hub right after the entry is created. */
 type ChatOwner = {
   eventId: string;
@@ -67,10 +61,6 @@ type ChatOwner = {
 };
 
 /** Runtime guards: every method here is reachable from a browser. */
-function assertRole(value: unknown): "user" | "assistant" {
-  if (value === "user" || value === "assistant") return value;
-  throw new Error('role must be "user" or "assistant"');
-}
 function assertText(value: unknown, max: number, what: string): string {
   if (typeof value !== "string" || !value.trim() || value.length > max) {
     throw new Error(
@@ -88,106 +78,86 @@ function assertChatId(value: unknown): string {
   return value;
 }
 
-/** One Durable Object per conversation, reached only through its owner. */
-export class GroupChat extends Agent<Env> {
-  onStart(): void {
-    this.sql`
-      CREATE TABLE IF NOT EXISTS messages (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        role TEXT NOT NULL,
-        text TEXT NOT NULL,
-        at INTEGER NOT NULL
-      )
-    `;
+/**
+ * Our chat base class: an `AIChatAgent` with voice input composed on.
+ *
+ * `RoutedAgents` requires its targets to extend `Agent`, and `AIChatAgent`
+ * does, so a routed chat gets message persistence, streaming and tools for
+ * free rather than through a second hand-written chat path.
+ */
+const ChatAgent = withVoiceInput(AIChatAgent);
+
+/** The text of a UI message, flattened for the hub's index. */
+function messageText(message: UIMessage): string {
+  return message.parts
+    .filter((part): part is { type: "text"; text: string } => part.type === "text")
+    .map((part) => part.text)
+    .join(" ")
+    .trim();
+}
+
+/** One Durable Object per table, reached only through its owning event hub. */
+export class GroupChat extends ChatAgent<Env> {
+  /** Bounded so a long event cannot grow one table's turn without limit. */
+  maxPersistedMessages = 200;
+
+  async init(owner: ChatOwner): Promise<void> {
+    await this.ctx.storage.put("owner", owner);
+    // Onboarding opens itself: the participant arrives to a question rather
+    // than an empty box. `persistMessages` rather than `saveMessages`,
+    // because `saveMessages` drives a model turn — which would have the
+    // agent answer its own greeting before anyone has typed anything.
+    await this.persistMessages([
+      {
+        id: crypto.randomUUID(),
+        role: "assistant",
+        parts: [{ type: "text", text: WELCOME_MESSAGE }]
+      }
+    ]);
   }
 
-  init(owner: ChatOwner): Promise<void> {
-    return this.ctx.storage.put("owner", owner);
+  async onChatMessage() {
+    const result = streamText({
+      model: getModel(this.env, { sessionAffinity: this.sessionAffinity }),
+      system: ONBOARDING_INSTRUCTIONS,
+      messages: await convertToModelMessages(this.messages)
+    });
+    return result.toUIMessageStreamResponse();
   }
 
-  @callable()
-  async addMessage(role: "user" | "assistant", text: string): Promise<number> {
-    // Guard at the boundary and use what the guards return: this method
-    // is reachable from a browser, where the declared types mean nothing.
-    const validRole = assertRole(role);
-    const validText = assertText(text, MAX_TEXT, "text");
-    const [{ id: seq }] = this.sql<{ id: number }>`
-      INSERT INTO messages (role, text, at) VALUES (${validRole}, ${validText}, ${Date.now()})
-      RETURNING id
-    `;
-
-    // Push the latest snapshot to the owner so listing and search never
-    // wake this DO. The owner's copy is derived data: a failed push
-    // leaves it stale until the next message, and a push for a deleted
-    // chat is refused, so nothing can resurrect a deleted entry.
+  /**
+   * Fires after a turn is persisted. Pushing here rather than on every frame
+   * means the hub sees one update per turn, not one per streamed token.
+   */
+  protected async onChatResponse(): Promise<void> {
     const owner = await this.ctx.storage.get<ChatOwner>("owner");
-    const [first] = this.sql<{ text: string }>`
-      SELECT text FROM messages WHERE role = 'user' ORDER BY id ASC LIMIT 1
-    `;
-    if (owner) {
-      try {
-        const hub = this.env.ProjectHub.getByName(owner.eventId);
-        await hub.recordChatActivity(owner.chatId, {
-          title: first ? first.text.slice(0, 80) : null,
-          lastMessage: text.slice(0, 120),
-          seq
-        });
-      } catch (error) {
-        console.warn("[GroupChat] owner update failed", error);
-      }
-    }
+    if (!owner) return;
 
-    return seq;
+    const firstFromParticipant = this.messages.find(
+      (message) => message.role === "user"
+    );
+    const latest = this.messages.at(-1);
+
+    try {
+      const hub = this.env.ProjectHub.getByName(owner.eventId);
+      await hub.recordChatActivity(owner.chatId, {
+        title: firstFromParticipant
+          ? messageText(firstFromParticipant).slice(0, 80)
+          : null,
+        lastMessage: latest ? messageText(latest).slice(0, 120) : null,
+        // Message count is monotonic per chat, which is all the hub's fence
+        // needs; it only ever compares a chat's pushes against its own.
+        seq: this.messages.length
+      });
+    } catch (error) {
+      console.warn("[GroupChat] owner update failed", error);
+    }
   }
 
+  /** Read by the host's cross-table view in Slice 5. */
   @callable()
-  getMessages(): ChatMessage[] {
-    return this.sql<ChatMessage>`
-      SELECT role, text, at FROM messages ORDER BY id ASC
-    `;
-  }
-
-  /**
-   * HTTP surface. The path the chat sees is the forwarded suffix:
-   * `/agents/project-hub/{user}/chats/{id}/messages` arrives here as
-   * `/messages`.
-   */
-  override async onRequest(request: Request): Promise<Response> {
-    if (new URL(request.url).pathname !== "/messages") {
-      return new Response("Not found", { status: 404 });
-    }
-    if (request.method === "POST") {
-      let body: unknown;
-      try {
-        body = await request.json();
-      } catch {
-        return new Response("Invalid JSON body", { status: 400 });
-      }
-      const { role, text } = (body ?? {}) as Partial<ChatMessage>;
-      // Only validation is a 400. A storage failure inside addMessage
-      // propagates and surfaces as a 500, as it should.
-      let validRole: "user" | "assistant";
-      let validText: string;
-      try {
-        validRole = assertRole(role);
-        validText = assertText(text, MAX_TEXT, "text");
-      } catch (error) {
-        return new Response(
-          error instanceof Error ? error.message : "Invalid message",
-          { status: 400 }
-        );
-      }
-      await this.addMessage(validRole, validText);
-    }
-    return Response.json(this.getMessages());
-  }
-
-  /**
-   * A WebSocket upgraded through the hub's route is answered by this
-   * Agent, which then owns the socket: frames never wake the hub.
-   */
-  override onMessage(connection: Connection, message: WSMessage): void {
-    connection.send(`echo:${String(message)}`);
+  getMessages(): UIMessage[] {
+    return this.messages;
   }
 }
 
@@ -210,6 +180,10 @@ class HubCallables extends RpcTarget {
 
   ensureHostThread(): Promise<string> {
     return this.#hub.ensureHostThread();
+  }
+
+  describeModel(): string {
+    return this.#hub.describeModel();
   }
 
   joinEvent(): Promise<string> {
@@ -344,10 +318,17 @@ export class ProjectHub extends DurableObject<Env> {
     return this.chats.delete(chatId);
   }
 
+  /** Which provider chats will actually use — the demo gets asked this. */
+  @callable()
+  describeModel(): string {
+    return modelLabel(this.env);
+  }
+
   /** Plain HTTP view of the catalog, for curl. */
   async onRequest(): Promise<Response> {
     return Response.json({
       event: this.lifecycle.name,
+      model: modelLabel(this.env),
       chats: await this.chats.list()
     });
   }
