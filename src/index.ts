@@ -18,6 +18,12 @@ import { getTranscriber, sttLabel } from "./stt";
 import { ONBOARDING_INSTRUCTIONS, WELCOME_MESSAGE } from "./onboarding";
 import { HOST_INSTRUCTIONS, HOST_WELCOME_MESSAGE } from "./host";
 import { CHATS_CHANGED, MAX_QUERY } from "./shared";
+import type {
+  ChatKind,
+  ChatMeta,
+  ChatOwner,
+  ConversationState
+} from "./types";
 
 /**
  * The recommended shape for "many chats per user": one top-level
@@ -40,42 +46,8 @@ import { CHATS_CHANGED, MAX_QUERY } from "./shared";
  * docs/agents/sub-agents.md for the decision rule.
  */
 
-/**
- * The host's private thread is a routed chat like any other — same class,
- * same storage, same socket — distinguished only by this flag. One chat
- * implementation, not two; `RoutedAgents` has a single namespace anyway,
- * so a separate class could not be routed alongside the group chats.
- */
-type ChatKind = "host" | "group";
-
-type ChatMeta = {
-  kind: ChatKind;
-  title: string | null;
-  lastMessage: string | null;
-  /**
-   * The tail of the conversation's most recent call, pushed as it is spoken.
-   * This is what lets the host read across every conversation without waking
-   * any of them;
-   * without it, reaching a transcript means drilling into one chat at a time.
-   */
-  transcript: string | null;
-  /**
-   * A per-chat push counter. Fences out delayed or superseded pushes without
-   * relying on `Date.now()` resolution. It counts pushes rather than messages
-   * because a call pushes transcript updates without adding any message.
-   */
-  seq: number;
-};
-
 /** How much of a call's transcript the hub keeps for cross-conversation reads. */
 const TRANSCRIPT_EXCERPT = 600;
-
-/** Recorded once by the owning hub right after the entry is created. */
-type ChatOwner = {
-  eventId: string;
-  chatId: string;
-  kind: ChatKind;
-};
 
 /** A conversation as the host's tools see it: the hub's pushed metadata. */
 function describeConversations(
@@ -126,12 +98,6 @@ function messageText(message: UIMessage): string {
     .join(" ")
     .trim();
 }
-
-/**
- * A conversation's synced state. Agent state reaches every connected client,
- * so the conversation's own screen shows its name the moment the agent sets it.
- */
-type ConversationState = { name: string | null; participants: number | null };
 
 /** One Durable Object per conversation, reached only through its event hub. */
 export class GroupChat extends ChatAgent<Env, ConversationState> {

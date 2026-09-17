@@ -22,41 +22,18 @@ import type { FormEvent } from "react";
 import { createRoot } from "react-dom/client";
 import { useAgent } from "agents/react";
 import { useAgentChat } from "@cloudflare/ai-chat/react";
-import type { RoutedAgentEntry } from "agents/routing";
 import qrcode from "qrcode-generator";
 import { hrefFor, navigate, parseRoute } from "./router";
 import type { Route } from "./router";
 import { CHATS_CHANGED, MAX_TEXT } from "./shared";
+import type {
+  ChatEntry,
+  ChatMessage,
+  ConversationState,
+  HubApi
+} from "./types";
 import { useCall } from "./voice";
 import "./styles.css";
-
-type ChatEntry = RoutedAgentEntry<{
-  kind: "host" | "group";
-  title: string | null;
-  lastMessage: string | null;
-  transcript: string | null;
-  seq: number;
-}>;
-
-/** A conversation's synced agent state, as `GroupChat` defines it. */
-type ConversationState = { name: string | null; participants: number | null };
-
-type ChatMessage = {
-  role: "user" | "assistant";
-  text: string;
-  at: number;
-};
-
-/** The hub's RpcTarget, as seen from the browser. */
-type HubApi = {
-  createChat(): Promise<string>;
-  ensureHostThread(): Promise<string>;
-  describeModel(): Promise<string>;
-  joinEvent(): Promise<string>;
-  listChats(): Promise<ChatEntry[]>;
-  searchChats(query: string): Promise<ChatEntry[]>;
-  deleteChat(chatId: string): Promise<boolean>;
-};
 
 function useHub(eventId: string, onChatsChanged?: () => void) {
   const changed = useRef(onChatsChanged);
