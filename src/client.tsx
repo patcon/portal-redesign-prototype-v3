@@ -15,20 +15,19 @@ import {
   SunIcon,
   TrashIcon
 } from "@phosphor-icons/react";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { FormEvent } from "react";
 import { createRoot } from "react-dom/client";
 import { useAgent } from "agents/react";
 import type { RoutedAgentEntry } from "agents/routing";
+import qrcode from "qrcode-generator";
+import { hrefFor, navigate, parseRoute } from "./router";
+import type { Route } from "./router";
 import { MAX_TEXT } from "./shared";
 import "./styles.css";
 
-const EVENT_KEY = "portal-prototype-event";
-const eventId =
-  localStorage.getItem(EVENT_KEY) ?? crypto.randomUUID().slice(0, 8);
-localStorage.setItem(EVENT_KEY, eventId);
-
 type ChatEntry = RoutedAgentEntry<{
+  kind: "host" | "group";
   title: string | null;
   lastMessage: string | null;
   seq: number;
@@ -43,10 +42,27 @@ type ChatMessage = {
 /** The hub's RpcTarget, as seen from the browser. */
 type HubApi = {
   createChat(): Promise<string>;
+  ensureHostThread(): Promise<string>;
+  joinEvent(): Promise<string>;
   listChats(): Promise<ChatEntry[]>;
   searchChats(query: string): Promise<ChatEntry[]>;
   deleteChat(chatId: string): Promise<boolean>;
 };
+
+function useHub(eventId: string) {
+  const hub = useAgent({ agent: "project-hub", name: eventId });
+  return { hub, api: hub.stub as HubApi };
+}
+
+function useRoute(): Route | null {
+  const [route, setRoute] = useState(() => parseRoute(location.pathname));
+  useEffect(() => {
+    const onPop = () => setRoute(parseRoute(location.pathname));
+    addEventListener("popstate", onPop);
+    return () => removeEventListener("popstate", onPop);
+  }, []);
+  return route;
+}
 
 function ModeToggle() {
   const [mode, setMode] = useState(
@@ -70,14 +86,47 @@ function ModeToggle() {
   );
 }
 
+/**
+ * Rendered from `location.origin`, so the code encodes whatever address the
+ * host actually opened the console on. Serve on the LAN address and the QR
+ * points at the LAN address; there is no configured hostname to get wrong.
+ */
+function JoinCode({ eventId }: { eventId: string }) {
+  const joinUrl = `${location.origin}${hrefFor({ name: "join", eventId })}`;
+  const svg = useMemo(() => {
+    const qr = qrcode(0, "M");
+    qr.addData(joinUrl);
+    qr.make();
+    return qr.createSvgTag({ cellSize: 4, margin: 2, scalable: true });
+  }, [joinUrl]);
+
+  return (
+    <div className="flex flex-col items-center gap-3 p-4">
+      <Text size="sm" variant="secondary">
+        Scan to join this event
+      </Text>
+      <div
+        className="w-48 bg-white p-2"
+        // Generated from our own join URL, not from anything a user typed.
+        dangerouslySetInnerHTML={{ __html: svg }}
+      />
+      <Text size="xs" variant="secondary">
+        {joinUrl}
+      </Text>
+    </div>
+  );
+}
+
 function ChatPane({
+  eventId,
   chatId,
   onActivity
 }: {
+  eventId: string;
   chatId: string;
-  onActivity: () => void;
+  onActivity?: () => void;
 }) {
-  // One WebSocket per open chat. The upgrade goes through the user hub,
+  // One WebSocket per open chat. The upgrade goes through the event hub,
   // which resolves the chat ID; the chat's own DO then owns the socket,
   // so the hub is not on the message path.
   const chat = useAgent({
@@ -106,10 +155,9 @@ function ChatPane({
       try {
         await chat.call("addMessage", ["user", text]);
         try {
-          // No model is wired into this example — the "assistant" reply
-          // just proves both roles land in the chat's own SQLite. The
-          // prefix counts against the server's limit, so trim the echoed
-          // text to fit rather than losing the whole reply.
+          // No model is wired in yet — the "assistant" reply just proves
+          // both roles land in the chat's own SQLite. The prefix counts
+          // against the server's limit, so trim the echoed text to fit.
           const prefix = `Echo from ${chatId.slice(0, 8)}: `;
           await chat.call("addMessage", [
             "assistant",
@@ -119,7 +167,7 @@ function ChatPane({
           // The user's message is already stored; show it even if the
           // demo reply failed.
           await refresh();
-          onActivity();
+          onActivity?.();
         }
       } finally {
         setBusy(false);
@@ -160,6 +208,7 @@ function ChatPane({
       >
         <Input
           value={draft}
+          aria-label="Message"
           onChange={(event) => setDraft(event.currentTarget.value)}
           placeholder="Say something…"
           className="flex-1"
@@ -177,54 +226,58 @@ function ChatPane({
   );
 }
 
-function App() {
-  // One connection to the per-user hub, a plain Durable Object. The
-  // WebSockets capability identifies it and answers `stub` calls against
-  // its RpcTarget, so useAgent needs nothing from Agent. Listing and
-  // search read only this object — no chat DO wakes up for the sidebar.
-  const hub = useAgent({
-    agent: "project-hub",
-    name: eventId
-  });
-  const hubApi = hub.stub as HubApi;
+/**
+ * The host's console: their own private thread, the QR code that spawns
+ * tables, and the tables that have joined. Listing and search read only the
+ * hub, so no table's Durable Object wakes for the sidebar.
+ */
+function HostView({ eventId }: { eventId: string }) {
+  const { hub, api } = useHub(eventId);
   const [chats, setChats] = useState<ChatEntry[]>([]);
+  const [hostChatId, setHostChatId] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [activeId, setActiveId] = useState<string | null>(null);
 
   const refreshChats = useCallback(async () => {
     const needle = query.trim();
     setChats(
-      needle === "" ? await hubApi.listChats() : await hubApi.searchChats(needle)
+      needle === "" ? await api.listChats() : await api.searchChats(needle)
     );
-  }, [query, hubApi]);
+  }, [api, query]);
 
   useEffect(() => {
     if (!hub.identified) return;
-    void refreshChats();
-  }, [hub.identified, refreshChats]);
+    void (async () => {
+      setHostChatId(await api.ensureHostThread());
+      await refreshChats();
+    })();
+  }, [api, hub.identified, refreshChats]);
 
   const createChat = useCallback(async () => {
-    const chatId = await hubApi.createChat();
-    setActiveId(chatId);
+    setActiveId(await api.createChat());
     await refreshChats();
-  }, [refreshChats, hubApi]);
+  }, [api, refreshChats]);
 
   const deleteChat = useCallback(
     async (chatId: string) => {
-      await hubApi.deleteChat(chatId);
+      await api.deleteChat(chatId);
       if (activeId === chatId) setActiveId(null);
       await refreshChats();
     },
-    [activeId, refreshChats, hubApi]
+    [activeId, api, refreshChats]
   );
+
+  // The host's own thread is in the catalog like any other chat; it just
+  // does not belong in the list of tables.
+  const tables = chats.filter((chat) => chat.metadata?.kind !== "host");
 
   return (
     <div className="flex h-screen flex-col">
       <header className="flex items-center justify-between border-b border-kumo-line px-4 py-3">
         <div className="flex items-center gap-2">
-          <Text bold>Portal</Text>
-          <Badge variant="secondary">one DO per group</Badge>
+          <Text bold>Host console</Text>
           <Badge variant="secondary">event {eventId}</Badge>
+          <Badge variant="secondary">{tables.length} tables</Badge>
         </div>
         <ModeToggle />
       </header>
@@ -234,8 +287,9 @@ function App() {
           <div className="flex items-center gap-2 p-3">
             <Input
               value={query}
+              aria-label="Search all tables"
               onChange={(event) => setQuery(event.currentTarget.value)}
-              placeholder="Search all chats…"
+              placeholder="Search all tables…"
               className="flex-1"
             />
             <Button
@@ -247,28 +301,46 @@ function App() {
             />
           </div>
           <div className="flex-1 overflow-y-auto">
-            {chats.length === 0 ? (
+            {hostChatId && (
+              <button
+                type="button"
+                onClick={() => setActiveId(hostChatId)}
+                className={`flex w-full items-center gap-2 px-4 py-3 text-left hover:bg-kumo-elevated ${
+                  activeId === hostChatId ? "bg-kumo-elevated" : ""
+                }`}
+              >
+                <Text size="sm" bold>
+                  Your thread
+                </Text>
+                <Text size="xs" variant="secondary">
+                  host
+                </Text>
+              </button>
+            )}
+            {tables.length === 0 ? (
               <div className="p-4">
                 <Text size="sm" variant="secondary">
                   {query
-                    ? "No chats match — the search ran over the index only."
-                    : "No chats yet. Each one you create is its own Durable Object."}
+                    ? "No tables match — the search ran over the hub's index only."
+                    : "No tables yet. Each scan of the code creates one, in its own Durable Object."}
                 </Text>
               </div>
             ) : (
-              chats.map((chat) => (
-                <button
-                  type="button"
+              tables.map((chat) => (
+                <div
                   key={chat.id}
-                  onClick={() => setActiveId(chat.id)}
-                  className={`group flex w-full items-center justify-between px-4 py-3 text-left hover:bg-kumo-elevated ${
+                  className={`group flex w-full items-center justify-between pr-2 hover:bg-kumo-elevated ${
                     activeId === chat.id ? "bg-kumo-elevated" : ""
                   }`}
                 >
-                  <div className="min-w-0">
+                  <button
+                    type="button"
+                    onClick={() => setActiveId(chat.id)}
+                    className="min-w-0 flex-1 px-4 py-3 text-left"
+                  >
                     <div className="truncate">
                       <Text size="sm" bold>
-                        {chat.metadata?.title ?? "New chat"}
+                        {chat.metadata?.title ?? "New table"}
                       </Text>
                     </div>
                     <div className="truncate">
@@ -276,19 +348,16 @@ function App() {
                         {chat.metadata?.lastMessage ?? "No messages yet"}
                       </Text>
                     </div>
-                  </div>
+                  </button>
                   <Button
                     variant="ghost"
                     shape="square"
-                    aria-label="Delete chat"
-                    className="opacity-0 group-hover:opacity-100"
-                    onClick={(event) => {
-                      event.stopPropagation();
-                      void deleteChat(chat.id);
-                    }}
+                    aria-label="Delete table"
+                    className="opacity-0 focus:opacity-100 group-hover:opacity-100"
+                    onClick={() => void deleteChat(chat.id)}
                     icon={<TrashIcon size={14} />}
                   />
-                </button>
+                </div>
               ))
             )}
           </div>
@@ -301,22 +370,89 @@ function App() {
           {activeId ? (
             <ChatPane
               key={activeId}
+              eventId={eventId}
               chatId={activeId}
               onActivity={() => void refreshChats()}
             />
           ) : (
-            <div className="flex h-full items-center justify-center p-8">
-              <Empty
-                icon={<ChatCircleIcon size={24} />}
-                title="Pick or create a chat"
-                description="Sidebar listing and search read only the per-user hub; each conversation lives in its own Durable Object with its own SQLite, alarms, and placement, reached through the hub's route."
-              />
+            <div className="flex h-full items-center justify-center">
+              <JoinCode eventId={eventId} />
             </div>
           )}
         </main>
+
+        {activeId && (
+          <aside className="w-64 border-l border-kumo-line">
+            <JoinCode eventId={eventId} />
+          </aside>
+        )}
       </div>
     </div>
   );
+}
+
+/** One table's device: its own chat, and nothing else. */
+function GroupView({ eventId, chatId }: { eventId: string; chatId: string }) {
+  return (
+    <div className="flex h-screen flex-col">
+      <header className="flex items-center justify-between border-b border-kumo-line px-4 py-3">
+        <Text bold>Table {chatId.slice(0, 8)}</Text>
+        <ModeToggle />
+      </header>
+      <main className="min-h-0 flex-1">
+        <ChatPane eventId={eventId} chatId={chatId} />
+      </main>
+    </div>
+  );
+}
+
+/**
+ * What the QR code points at. Spawns this table's chat and hands the device
+ * straight to it, so the participant never sees a join screen.
+ */
+function JoinView({ eventId }: { eventId: string }) {
+  const { hub, api } = useHub(eventId);
+  // One chat per scan: without this, a re-render before navigation lands
+  // would leave an orphan table in the host's sidebar.
+  const claimed = useRef(false);
+
+  useEffect(() => {
+    if (!hub.identified || claimed.current) return;
+    claimed.current = true;
+    void (async () => {
+      navigate({ name: "group", eventId, chatId: await api.joinEvent() });
+    })();
+  }, [api, eventId, hub.identified]);
+
+  return (
+    <div className="flex h-screen items-center justify-center">
+      <Empty
+        icon={<ChatCircleIcon size={24} />}
+        title="Joining…"
+        description="Setting up a Durable Object for this table."
+      />
+    </div>
+  );
+}
+
+function App() {
+  const route = useRoute();
+
+  // No route: start a fresh event and send the host to its console.
+  useEffect(() => {
+    if (route) return;
+    navigate({ name: "host", eventId: crypto.randomUUID().slice(0, 8) });
+  }, [route]);
+
+  if (!route) return null;
+  switch (route.name) {
+    case "host":
+      return <HostView eventId={route.eventId} />;
+    case "join":
+      return <JoinView eventId={route.eventId} />;
+    case "group":
+      return <GroupView eventId={route.eventId} chatId={route.chatId} />;
+  }
 }
 
 createRoot(document.getElementById("root") as HTMLElement).render(<App />);

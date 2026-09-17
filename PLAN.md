@@ -236,7 +236,22 @@ Each is independently demoable. Whenever we stop, there is something to show.
 - First message in the host thread offers/exposes a QR code encoding the join URL.
 - Scanning creates a new `GroupChat` via the hub and lands the phone in it.
 - **Done when:** a phone on the router scans and lands in a live group chat.
-- **Patrick tests this on a real phone the moment it exists. Not at 8am.**
+  ⚠️ **Partially met — verified on `localhost` only.** The join flow itself is
+  proven: `/join/{event}` creates a `GroupChat` and redirects to
+  `/g/{event}/{chatId}`, the table talks, and the host console lists it from hub
+  metadata alone. The QR encodes `location.origin`, so on localhost it encodes a
+  URL no phone can reach.
+- **The phone path is blocked on an insecure-context problem, not on our code.**
+  Served over plain HTTP on a LAN address, browsers withhold
+  `crypto.randomUUID`, which `agents`' own client (`src/client.ts:789`) calls to
+  mint connection ids — so the socket never opens and the hub stays empty.
+  Confirmed against `http://192.168.2.22:5173`. Three ways out when wanted:
+  a ~10-line `crypto.randomUUID` shim imported first (no cert warning, works on
+  any phone); HTTPS via a self-signed cert (phones must tap through a warning);
+  or a tunnel such as `cloudflared`. Deferred by Patrick: "just use localhost".
+- Also fixed here: the example nested the delete control inside each row's own
+  `<button>`, which is invalid HTML and left delete unreachable by keyboard.
+  Rows are now a row `<div>` with the two controls as siblings.
 
 ### Slice 2 — OpenRouter + onboarding-as-messages (~75m)
 

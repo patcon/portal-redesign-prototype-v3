@@ -32,7 +32,16 @@ import { MAX_QUERY, MAX_TEXT } from "./shared";
  * docs/agents/sub-agents.md for the decision rule.
  */
 
+/**
+ * The host's private thread is a routed chat like any other — same class,
+ * same storage, same socket — distinguished only by this flag. One chat
+ * implementation, not two; `RoutedAgents` has a single namespace anyway,
+ * so a separate class could not be routed alongside the group chats.
+ */
+type ChatKind = "host" | "group";
+
 type ChatMeta = {
+  kind: ChatKind;
   title: string | null;
   lastMessage: string | null;
   /**
@@ -196,7 +205,15 @@ class HubCallables extends RpcTarget {
   }
 
   createChat(): Promise<string> {
-    return this.#hub.createChat();
+    return this.#hub.createChat("group");
+  }
+
+  ensureHostThread(): Promise<string> {
+    return this.#hub.ensureHostThread();
+  }
+
+  joinEvent(): Promise<string> {
+    return this.#hub.joinEvent();
   }
 
   listChats() {
@@ -235,9 +252,9 @@ export class ProjectHub extends DurableObject<Env> {
     .use(this.chats)
     .use(this.webSockets);
 
-  async createChat(): Promise<string> {
+  async createChat(kind: ChatKind = "group"): Promise<string> {
     const { id } = await this.chats.create({
-      metadata: { title: null, lastMessage: null, seq: 0 }
+      metadata: { kind, title: null, lastMessage: null, seq: 0 }
     });
     try {
       // get() resolves the entry to an initialized, typed stub for RPC.
@@ -256,6 +273,25 @@ export class ProjectHub extends DurableObject<Env> {
   }
 
   /**
+   * The host's thread, created on first visit to the host route. Serialized
+   * so two tabs opening at once cannot leave the event with two host
+   * threads — the second call sees the first one's entry.
+   */
+  ensureHostThread(): Promise<string> {
+    return this.ctx.blockConcurrencyWhile(async () => {
+      const existing = (await this.chats.list()).find(
+        (entry) => entry.metadata?.kind === "host"
+      );
+      return existing ? existing.id : this.createChat("host");
+    });
+  }
+
+  /** A table joining the event. One scan of the host's QR code, one chat. */
+  joinEvent(): Promise<string> {
+    return this.createChat("group");
+  }
+
+  /**
    * DO-RPC target for GroupChat pushes. Rejects a push whose `seq` is
    * not strictly greater than the entry's current one, so a push
    * delayed by a slow round-trip can't overwrite one that arrived first
@@ -268,7 +304,10 @@ export class ProjectHub extends DurableObject<Env> {
    * before either writes, and the fence would compare against a value
    * that's already stale by the time the later one applies.
    */
-  recordChatActivity(chatId: string, meta: ChatMeta): Promise<boolean> {
+  recordChatActivity(
+    chatId: string,
+    meta: Omit<ChatMeta, "kind">
+  ): Promise<boolean> {
     return this.ctx.blockConcurrencyWhile(async () => {
       const current = (await this.chats.list()).find(
         (entry) => entry.id === chatId
@@ -276,7 +315,12 @@ export class ProjectHub extends DurableObject<Env> {
       if (!current || (current.metadata?.seq ?? 0) >= meta.seq) {
         return false;
       }
-      return this.chats.setMetadata(chatId, meta);
+      // `kind` is the hub's to assign, so carry it across rather than let
+      // a chat's push — which cannot know it — erase it.
+      return this.chats.setMetadata(chatId, {
+        ...meta,
+        kind: current.metadata?.kind ?? "group"
+      });
     });
   }
 

@@ -5,7 +5,7 @@
   "type": "module",
   "version": "0.0.0",
   "scripts": {
-    "start": "vite dev",
+    "start": "vite dev --host",
     "deploy": "vite build && wrangler deploy",
     "typecheck": "tsc --noEmit",
     "types": "wrangler types env.d.ts --include-runtime false"
@@ -17,6 +17,7 @@
     "@phosphor-icons/react": "^2.1.10",
     "agents": "link:../agents/packages/agents",
     "ai": "^7.0.0",
+    "qrcode-generator": "^2.0.4",
     "react": "^19.2.7",
     "react-dom": "^19.2.7",
     "workers-ai-provider": "^4.0.0"
