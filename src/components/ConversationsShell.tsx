@@ -132,14 +132,25 @@ export function ConversationsShell({
  *
  * The delete button is a sibling of the row button, not nested inside it: a button
  * within a button is invalid, and the two do different things.
+ *
+ * Exported because the host's pinned thread is one of these too: it belongs to the
+ * list it sits above, and the way to make it read that way is to be the same row,
+ * with an icon where a conversation shows its initial.
  */
-function ConversationListItem({
+export function ConversationListItem({
   row,
+  icon,
   isActive,
   onSelect,
   onDelete,
 }: {
   row: ConversationRow;
+  /**
+   * Fills the avatar disc in place of the title's first letter. For a thread that
+   * is not one of the conversations — the host's own — where an initial would read
+   * as the name of somebody at the event.
+   */
+  icon?: ReactNode;
   isActive: boolean;
   onSelect: () => void;
   onDelete?: () => void;
@@ -158,7 +169,7 @@ function ConversationListItem({
         className="flex min-w-0 flex-1 items-center gap-3 px-3 py-2.5 text-left"
       >
         <div className="flex size-11 shrink-0 items-center justify-center rounded-full bg-[var(--chat-bubble-incoming)] text-[13px] font-semibold text-[var(--chat-text-secondary)]">
-          {row.title.charAt(0).toUpperCase()}
+          {icon ?? row.title.charAt(0).toUpperCase()}
         </div>
         <div className="min-w-0 flex-1">
           <div className="truncate text-[15px] font-semibold text-[var(--chat-text-primary)]">

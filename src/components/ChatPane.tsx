@@ -4,6 +4,17 @@ import { useAgent } from "agents/react";
 import { useAgentChat } from "@cloudflare/ai-chat/react";
 import type { ChatUser } from "@/components/ui/chatcn/types";
 import { CallScreen, Conversation, LiveCallBanner } from "@/components/dembrane";
+import type { ActivityMessageData } from "@/components/dembrane/Activity";
+import { Button } from "@/components/ui/shadcn/button";
+import {
+  Drawer,
+  DrawerClose,
+  DrawerContent,
+  DrawerDescription,
+  DrawerFooter,
+  DrawerHeader,
+  DrawerTitle,
+} from "@/components/ui/shadcn/drawer";
 import { MAX_TEXT } from "../shared";
 import type { ConversationState } from "../types";
 import { useCall } from "../hooks/useCall";
@@ -136,6 +147,10 @@ export function ChatPane({
   // diarized, so there are no turns to break it into.
   const transcript = [call.heard, call.interim].filter(Boolean).join(" ");
 
+  // The activity whose panel is open, or `null`. A call's card carries a trimmed line
+  // of its transcript; the whole thing is behind the click, in the drawer below.
+  const [openedActivity, setOpenedActivity] = useState<ActivityMessageData | null>(null);
+
   // Starts a call, or returns to the one already running. Both the header button and
   // the banner want this single "show me the call" action.
   const openCall = useCallback(() => {
@@ -153,6 +168,7 @@ export function ChatPane({
         actions={actions?.({ callable, inCall: call.inCall, startCall: openCall })}
         onCall={callable && !call.inCall ? call.start : undefined}
         messages={thread}
+        onActivityOpen={setOpenedActivity}
         onSend={send}
         placeholder={isStreaming ? "Thinking…" : "Say something…"}
         banners={
@@ -170,6 +186,41 @@ export function ChatPane({
           </>
         }
       />
+
+      {/*
+        Half the viewport, the shape the design repo settles on: the panel is a place
+        rather than a message, so it opens to the same size every time and leaves the
+        top of the conversation readable behind it.
+      */}
+      <Drawer
+        open={openedActivity !== null}
+        onOpenChange={(next) => !next && setOpenedActivity(null)}
+      >
+        <DrawerContent className="h-[50dvh]!">
+          <DrawerHeader>
+            <DrawerTitle>{openedActivity?.activity.title ?? "Activity"}</DrawerTitle>
+            <DrawerDescription>{openedActivity?.activity.description}</DrawerDescription>
+          </DrawerHeader>
+          {/*
+            The transcript as it was spoken: one undiarized blob, shown the way
+            `CallScreen` shows it while the call is live. An empty `detail` is a call
+            that ended before any audio came back, which is worth saying rather than
+            leaving as a blank panel.
+          */}
+          <div className="text-muted-foreground flex-1 space-y-3 overflow-y-auto px-4 pb-4">
+            {openedActivity?.activity.detail ? (
+              <p className="whitespace-pre-wrap">{openedActivity.activity.detail}</p>
+            ) : (
+              <p>No transcript — the call ended before any audio came back.</p>
+            )}
+          </div>
+          <DrawerFooter>
+            <DrawerClose asChild>
+              <Button variant="outline">Close</Button>
+            </DrawerClose>
+          </DrawerFooter>
+        </DrawerContent>
+      </Drawer>
 
       {onCallScreen && (
         // Fixed rather than a sibling in the flex column: the call is a screen that

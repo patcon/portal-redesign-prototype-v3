@@ -1,14 +1,21 @@
 /** @vitest-environment jsdom */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import type { ChatUser } from "@/components/ui/chatcn/types";
 
 // The two text sockets. Neither is what these tests are about, and both would
 // reach for a real WebSocket on mount, so they are replaced wholesale with the
 // shape `ChatPane` reads off them.
 vi.mock("agents/react", () => ({ useAgent: () => ({}) }));
+// What the thread contains is per-test, so the mock reads a mutable array the
+// test fills in before rendering.
+const threadMessages: unknown[] = [];
 vi.mock("@cloudflare/ai-chat/react", () => ({
-  useAgentChat: () => ({ messages: [], sendMessage: vi.fn<() => void>(), status: "ready" }),
+  useAgentChat: () => ({
+    messages: threadMessages,
+    sendMessage: vi.fn<() => void>(),
+    status: "ready",
+  }),
 }));
 
 /**
@@ -58,6 +65,7 @@ function renderPane(props: Partial<Parameters<typeof ChatPane>[0]> = {}) {
 describe("ChatPane", () => {
   beforeEach(() => {
     built.length = 0;
+    threadMessages.length = 0;
   });
   afterEach(cleanup);
 
@@ -85,6 +93,24 @@ describe("ChatPane", () => {
     renderPane({ callable: false });
 
     expect(built).toHaveLength(0);
+  });
+
+  it("opens a call's full transcript in a drawer when its card is clicked", () => {
+    const transcript = `${"the ferries run every twenty minutes ".repeat(20)}end of it`;
+    threadMessages.push({
+      id: "call-1",
+      role: "assistant",
+      metadata: { kind: "voice-call" },
+      parts: [{ type: "text", text: `Voice call transcript:\n${transcript}` }],
+    });
+    renderPane();
+
+    // The card shows a trimmed line; the drawer behind it is where the whole
+    // call is readable.
+    expect(screen.queryByText(transcript)).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: /Voice call/ }));
+
+    expect(screen.getByText(transcript)).toBeTruthy();
   });
 
   it("tells a header-actions slot that calls are disabled", () => {

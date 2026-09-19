@@ -12,7 +12,7 @@ import type { ChatMessageData, ChatUser } from "@/components/ui/chatcn/types";
 import type { ActivityMessageData } from "@/components/dembrane/Activity";
 import type { ConversationMessage } from "@/components/dembrane/ConversationMessages";
 import type { PlatformMessageData } from "@/components/dembrane/PlatformMessage";
-import type { ChatEntry } from "../types";
+import type { ChatEntry, ConversationState } from "../types";
 
 /**
  * The shape this file reads out of `useAgentChat`, written structurally rather than
@@ -136,10 +136,29 @@ export function toConversationMessages(
   return out;
 }
 
-/** The first line or so of a transcript, for the face of an activity card. */
-function summarize(transcript: string, limit = 120): string {
+/**
+ * The first line or so of a transcript, for the face of an activity card.
+ *
+ * Short on purpose: the card is a three-line summary of something that happened, and
+ * the whole call is one click away in the drawer `detail` feeds. A limit long enough
+ * to be worth reading on its own would make every call the tallest thing in the thread.
+ */
+function summarize(transcript: string, limit = 80): string {
   const flat = transcript.replace(/\s+/g, " ").trim();
   return flat.length <= limit ? flat : `${flat.slice(0, limit - 1).trimEnd()}…`;
+}
+
+/**
+ * The conversation's header subtitle: who is in it, and on how many devices.
+ *
+ * Each scan of the join code is one device, so a conversation is always one device
+ * however many people share it — the participant count is the only part the agent
+ * learns, and it is unknown until onboarding asks.
+ */
+export function describeParticipants(state: ConversationState | null): string {
+  const people = state?.participants;
+  if (!people) return "1 device";
+  return `${people} ${people === 1 ? "participant" : "participants"} (1 device)`;
 }
 
 /** One row in the conversation list. */
