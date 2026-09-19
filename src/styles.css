@@ -134,6 +134,7 @@
   }
   html {
     @apply font-sans;
+    overscroll-behavior-y: none;
   }
   /*
    * Tailwind v4's Preflight gives buttons `cursor: default`, where v3 gave them
