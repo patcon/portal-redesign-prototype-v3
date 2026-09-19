@@ -42,15 +42,16 @@ export function ChatPane({
    * pair outright, so it is handed the call state and the way to start one — the
    * button has to be restated by whoever takes the slot over. It is also told
    * whether this conversation takes calls at all, so a slot that draws a phone
-   * button can leave it out rather than each caller tracking that separately.
+   * button can disable it rather than each caller tracking that separately.
    */
   actions?: (call: { callable: boolean; inCall: boolean; startCall: () => void }) => ReactNode;
   /**
    * Whether this conversation can hold a call. False for the host's own thread:
    * it is a private chat with the model about the room, not a conversation
    * anyone speaks into, and a transcript left behind there would be the host
-   * talking to themselves. Off, the pane draws no call affordance and — the
-   * part that matters — never opens a voice socket for the thread.
+   * talking to themselves. Off, the call button stays on screen but disabled —
+   * a thread that visibly takes no calls, rather than one whose phone has
+   * quietly gone missing — and no voice socket is opened for the thread at all.
    */
   callable?: boolean;
   onActivity?: () => void;
@@ -142,17 +143,6 @@ export function ChatPane({
     else call.start();
   }, [call]);
 
-  // A caller's own buttons win. Without them `Conversation` draws its default
-  // phone-and-search pair, which is right while calls are on — but the phone in
-  // it is the only call affordance there is, so a thread that takes none clears
-  // the pair with `null`, the component's "no buttons". `undefined` would hand
-  // the default pair back.
-  const headerActions = actions
-    ? actions({ callable, inCall: call.inCall, startCall: openCall })
-    : callable
-      ? undefined
-      : null;
-
   return (
     <>
       <Conversation
@@ -160,7 +150,7 @@ export function ChatPane({
         title={title}
         subtitle={subtitle}
         avatar={avatar}
-        actions={headerActions}
+        actions={actions?.({ callable, inCall: call.inCall, startCall: openCall })}
         onCall={callable && !call.inCall ? call.start : undefined}
         messages={thread}
         onSend={send}

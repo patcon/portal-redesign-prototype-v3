@@ -171,18 +171,20 @@ export function HostView({ eventId }: { eventId: string }) {
           // The host's thread is the host briefing themselves on the room; a
           // call belongs in the conversations, where there are people talking.
           callable={!isHostThread}
-          actions={({ callable, inCall, startCall }) =>
-            callable ? (
-              <Button
-                variant="ghost"
-                size="icon"
-                aria-label={inCall ? "Return to call" : "Start call"}
-                onClick={startCall}
-              >
-                <PhoneIcon className="size-4" />
-              </Button>
-            ) : null
-          }
+          actions={({ callable, inCall, startCall }) => (
+            <Button
+              variant="ghost"
+              size="icon"
+              // Disabled rather than dropped, so the host's thread reads as a
+              // thread that does not take calls instead of one that mislaid
+              // its phone button.
+              disabled={!callable}
+              aria-label={inCall ? "Return to call" : "Start call"}
+              onClick={startCall}
+            >
+              <PhoneIcon className="size-4" />
+            </Button>
+          )}
         />
       )}
     </ConversationsShell>

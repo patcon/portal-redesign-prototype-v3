@@ -72,10 +72,13 @@ describe("ChatPane", () => {
     expect(built[0]?.connect).toHaveBeenCalled();
   });
 
-  it("offers no call when calls are disabled", () => {
+  it("shows the call disabled rather than absent when calls are off", () => {
     renderPane({ callable: false });
 
-    expect(screen.queryByRole("button", { name: "Start call" })).toBeNull();
+    // Kept on screen, greyed: the thread is visibly one that does not take
+    // calls, which a missing button would leave the host guessing at.
+    const phone = screen.getByRole("button", { name: "Start call" });
+    expect(phone.hasAttribute("disabled")).toBe(true);
   });
 
   it("opens no voice socket at all when calls are disabled", () => {
