@@ -10,7 +10,6 @@ import {
   Drawer,
   DrawerClose,
   DrawerContent,
-  DrawerDescription,
   DrawerFooter,
   DrawerHeader,
   DrawerTitle,
@@ -196,10 +195,15 @@ export function ChatPane({
         open={openedActivity !== null}
         onOpenChange={(next) => !next && setOpenedActivity(null)}
       >
-        <DrawerContent className="h-[50dvh]!">
+        {/*
+          No `DrawerDescription`: the card's description is a trimmed opening of the
+          very transcript below it, so printing it here is the same words twice, the
+          second time directly above the full version. `aria-describedby={undefined}`
+          is what Radix needs to stop looking for the description that is gone.
+        */}
+        <DrawerContent className="h-[50dvh]!" aria-describedby={undefined}>
           <DrawerHeader>
             <DrawerTitle>{openedActivity?.activity.title ?? "Activity"}</DrawerTitle>
-            <DrawerDescription>{openedActivity?.activity.description}</DrawerDescription>
           </DrawerHeader>
           {/*
             The transcript as it was spoken: one undiarized blob, shown the way

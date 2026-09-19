@@ -113,6 +113,28 @@ describe("ChatPane", () => {
     expect(screen.getByText(transcript)).toBeTruthy();
   });
 
+  it("does not repeat the card's snippet above the transcript it opens", () => {
+    const transcript = `${"the ferries run every twenty minutes ".repeat(20)}end of it`;
+    threadMessages.push({
+      id: "call-1",
+      role: "assistant",
+      metadata: { kind: "voice-call" },
+      parts: [{ type: "text", text: `Voice call transcript:\n${transcript}` }],
+    });
+    renderPane();
+
+    // Whatever the card trimmed the call down to — read off the card rather
+    // than recomputed, so the trimming stays `adapt`'s business alone.
+    const snippet = screen.getByText(/^the ferries run every twenty minutes/).textContent ?? "";
+    expect(snippet).not.toBe("");
+
+    fireEvent.click(screen.getByRole("button", { name: /Voice call/ }));
+
+    // Still exactly once, on the card the drawer opened from: the panel holds
+    // the call itself, and the snippet is the part already read.
+    expect(screen.getAllByText(snippet)).toHaveLength(1);
+  });
+
   it("tells a header-actions slot that calls are disabled", () => {
     const actions = vi.fn<() => null>(() => null);
     renderPane({ callable: false, actions });
