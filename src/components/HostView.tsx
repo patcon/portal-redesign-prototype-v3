@@ -168,16 +168,21 @@ export function HostView({ eventId }: { eventId: string }) {
           title={activeTitle}
           avatar={<BackToList onBack={() => setActiveId(null)} />}
           onActivity={() => void refreshChats()}
-          actions={({ inCall, startCall }) => (
-            <Button
-              variant="ghost"
-              size="icon"
-              aria-label={inCall ? "Return to call" : "Start call"}
-              onClick={startCall}
-            >
-              <PhoneIcon className="size-4" />
-            </Button>
-          )}
+          // The host's thread is the host briefing themselves on the room; a
+          // call belongs in the conversations, where there are people talking.
+          callable={!isHostThread}
+          actions={({ callable, inCall, startCall }) =>
+            callable ? (
+              <Button
+                variant="ghost"
+                size="icon"
+                aria-label={inCall ? "Return to call" : "Start call"}
+                onClick={startCall}
+              >
+                <PhoneIcon className="size-4" />
+              </Button>
+            ) : null
+          }
         />
       )}
     </ConversationsShell>

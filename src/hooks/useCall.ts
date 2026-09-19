@@ -60,8 +60,12 @@ class RoutedVoiceTransport implements VoiceTransport {
 /**
  * A conversation's call: microphone in, live transcript out. The server
  * accumulates the transcript and, when the call ends, leaves it in the thread.
+ *
+ * A `null` base path is a conversation that cannot hold a call — the host's own
+ * thread. The hook still runs, because hooks must, but it builds no voice
+ * client and opens no second socket, and every value it returns stays at rest.
  */
-export function useCall(basePath: string) {
+export function useCall(basePath: string | null) {
   const client = useRef<VoiceClient | null>(null);
   const [inCall, setInCall] = useState(false);
   const [heard, setHeard] = useState("");
@@ -71,6 +75,7 @@ export function useCall(basePath: string) {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    if (basePath === null) return;
     const voice = new VoiceClient({
       agent: "group-chat",
       transport: new RoutedVoiceTransport(basePath),
