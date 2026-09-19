@@ -24,7 +24,7 @@ export function GroupView({ eventId, chatId }: { eventId: string; chatId: string
     : "1 device";
 
   return (
-    <div className="h-screen">
+    <div className="h-dvh">
       <ChatPane
         eventId={eventId}
         chatId={chatId}

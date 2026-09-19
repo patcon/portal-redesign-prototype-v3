@@ -29,7 +29,7 @@ import { cn } from '@/lib/utils'
  * height of its own, so an inner `h-full` would resolve against an auto-height parent,
  * collapse to content height, and leave the composer floating under the last message
  * instead of pinned to the bottom. (This is why `.storybook/preview.tsx` passes the
- * provider a `flex h-screen flex-col` className.) `ConversationMessages` is `flex-1`, so it takes
+ * provider a `flex h-dvh flex-col` className.) `ConversationMessages` is `flex-1`, so it takes
  * the slack between header and composer.
  *
  * The component is `h-full` overall: it fills whatever bounded ancestor it is given, and

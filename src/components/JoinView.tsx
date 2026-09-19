@@ -22,7 +22,7 @@ export function JoinView({ eventId }: { eventId: string }) {
   }, [api, eventId, hub.identified]);
 
   return (
-    <div className="flex h-screen flex-col items-center justify-center gap-3 px-6 text-center">
+    <div className="flex h-dvh flex-col items-center justify-center gap-3 px-6 text-center">
       <MessageCircleIcon className="text-muted-foreground size-6" />
       <p className="font-medium">Joining…</p>
       <p className="text-muted-foreground text-sm">

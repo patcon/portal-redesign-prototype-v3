@@ -59,7 +59,7 @@ export function ConversationsShell({
   const selected = activeId !== null;
 
   return (
-    <ChatProvider currentUser={currentUser} className="flex h-screen bg-[var(--chat-bg-app)]">
+    <ChatProvider currentUser={currentUser} className="flex h-dvh bg-[var(--chat-bg-app)]">
       <aside
         className={cn(
           "flex w-full shrink-0 flex-col border-r border-[var(--chat-border-strong)] bg-[var(--chat-bg-sidebar)] md:w-80",
