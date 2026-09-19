@@ -114,26 +114,46 @@ They import through the `@/` alias, declared in both `tsconfig.json` and
 
 ## Configuration
 
-Copy `.dev.vars.sample` to `.dev.vars`. Both providers below default to
-something that works with no keys at all. Changing `.dev.vars` needs a restart
-of `pnpm start`; the host console header shows which model and transcriber are
-live.
+Copy `.dev.vars.sample` to `.dev.vars`. Everything defaults to something that
+works with no keys and no paid Workers plan. Changing `.dev.vars` needs a
+restart of `pnpm start`; the host console header shows the live specs.
+
+Each model is named by one variable holding a single `@host/model` spec — the
+prefix says where it runs, the rest is the model id. Switching provider is a
+one-line edit, and the header prints the spec back ready to paste:
+
+```sh
+TEXT_MODEL=@openrouter/anthropic/claude-haiku-4.5
+STT_MODEL=@local/openai/whisper-tiny-en
+```
 
 ### Chat model
 
-`MODEL_PROVIDER` picks the chat model: `workers-ai` (default, Kimi K2 through
-the AI binding, no keys) or `openrouter` (needs `OPENROUTER_API_KEY`;
-`OPENROUTER_MODEL` defaults to `openrouter/free`, capped at 50 requests a day).
+`TEXT_MODEL` defaults to `@cf/meta/llama-3.3-70b-instruct-fp8-fast`. Two hosts:
+
+| Host              | Takes                                                                             | Notes                                                                                                                              |
+| ----------------- | --------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| `@cf/...`         | any [Workers AI text model](https://developers.cloudflare.com/workers-ai/models/) | No keys. `@cf/moonshotai/kimi-k2.7-code` is better but needs a paid Workers plan ("5035: not available on the Workers Free plan"). |
+| `@openrouter/...` | any OpenRouter model                                                              | Needs `OPENROUTER_API_KEY`. `@openrouter/openrouter/free` is capped at 50 requests a day without credits.                          |
+
+Neither is enumerated in code — whatever follows the host goes straight to the
+provider, so any catalog id works without a change.
 
 ### Speech-to-text
 
-Conversation calls are transcribed by the provider named in `STT_PROVIDER`.
+`STT_MODEL` picks the transcriber for conversation calls. Unlike the chat
+model this is a fixed menu, since each entry needs its own client:
 
-| `STT_PROVIDER`    | Runs on                     | Trade-off                                                                                                                                                                |
-| ----------------- | --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `nova3` (default) | Workers AI, Deepgram Nova 3 | Best quality, live interim text. Under `vite dev` its WebSocket goes through the AI binding's remote proxy, which has failed mid-session ("did not return a WebSocket"). |
-| `flux`            | Workers AI, Deepgram Flux   | Same WebSocket path and caveat as `nova3`.                                                                                                                               |
-| `whisper-local`   | whisperfile on this machine | Offline, no Cloudflare calls. Lower quality, no interim text; an utterance lands after ~800ms of silence.                                                                |
+| `STT_MODEL`                            | Runs on                     | Trade-off                                                                                                                                                        |
+| -------------------------------------- | --------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `@cf/openai/whisper-tiny-en` (default) | Workers AI, whisper         | Cheapest, and the only hosted option with no WebSocket — so it works under the `vite dev` AI proxy. No interim text; an utterance lands after ~800ms of silence. |
+| `@cf/deepgram/nova-3`                  | Workers AI, Deepgram Nova 3 | Best quality, live interim text. Its WebSocket goes through the AI binding's remote proxy, which has failed mid-session ("did not return a WebSocket").          |
+| `@cf/deepgram/flux`                    | Workers AI, Deepgram Flux   | Same WebSocket path and caveat as `nova-3`.                                                                                                                      |
+| `@local/openai/whisper-tiny-en`        | whisperfile on this machine | The same model as the `@cf` whisper above, offline and with no Cloudflare calls. Override the endpoint with `STT_WHISPER_URL`.                                   |
+
+Both whisper entries are driven by our own voice-activity detection
+(`src/server/stt/vad-transcriber.ts`): whisper transcribes a finished clip and
+has no endpointing of its own, so the pipeline has to find the pauses.
 
 To run fully offline:
 
@@ -182,7 +202,8 @@ document and were not re-measured here.
   recording, but no message is written when the call ends. `onTranscript` only
   fires on a _finalized_ transcript, and `onCallEnd` returns silently when none
   arrived — which is also what happens when the Nova 3 socket dies mid-call
-  under `vite dev`. Undiagnosed; `whisper-local` is the workaround to try.
+  under `vite dev`. Undiagnosed; the whisper entries are the workaround to
+  try, since neither opens a socket.
 - **No authentication.** See Routes above.
 
 ## Background

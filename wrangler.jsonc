@@ -26,17 +26,18 @@
       "new_sqlite_classes": ["ProjectHub", "GroupChat"],
     },
   ],
-  // Speech-to-text provider: nova3 | flux | whisper-local. See src/server/stt/.
+  // One `@host/model` spec per task; both default in code, so these stay empty.
+  // See src/server/model.ts and src/server/stt/index.ts for the accepted hosts.
   "vars": {
-    "MODEL_PROVIDER": "workers-ai",
-    "OPENROUTER_MODEL": "",
-    "WORKERS_AI_MODEL": "",
-    "STT_PROVIDER": "nova3",
+    "TEXT_MODEL": "",
+    "STT_MODEL": "",
     "STT_WHISPER_URL": "",
   },
-  // `remote: true` is required: under `vite dev` the default local AI proxy
-  // cannot perform a WebSocket upgrade, so Nova 3 / Flux streaming STT fails
-  // with "did not return a WebSocket". Remote binds to the real service.
+  // `remote: true` is required by the streaming transcribers: under `vite dev`
+  // the default local AI proxy cannot perform a WebSocket upgrade, so Nova 3 /
+  // Flux fails with "did not return a WebSocket". Remote binds to the real
+  // service. `@cf/openai/whisper-tiny-en` is a plain request and needs none of
+  // this, so a whisper-only setup could drop it.
   "ai": {
     "binding": "AI",
     "remote": true,

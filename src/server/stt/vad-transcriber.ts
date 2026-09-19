@@ -1,76 +1,80 @@
 /**
- * Copied from the `local-whisper-stt` branch of the agents fork
- * (examples/voice-input/src/local-whisper-stt.ts).
+ * A `Transcriber` for batch speech-to-text models, which is to say: everything
+ * that is not Deepgram.
  *
- * Local, low-quality STT provider for offline development.
+ * `agents/voice` ships only streaming transcribers, because its `Transcriber`
+ * contract assumes the provider detects utterance boundaries itself (Flux
+ * `EndOfTurn`, Nova 3 `speech_final`). Whisper has no endpointing and no
+ * interim results — it takes a clip and returns text — so the caller has to
+ * chunk the mic stream into utterances before it can use one at all.
  *
- * Talks to a whisperfile server (https://huggingface.co/Mozilla/whisperfile)
- * running on your machine instead of Cloudflare's Workers AI binding. No
- * Cloudflare account or network access required.
+ * That chunking is what this class is: a naive energy-based VAD that buffers
+ * audio, notices a pause, wraps what it heard in a WAV, and hands it to
+ * whatever transport it was constructed with. Quality and latency are both
+ * worse than a streaming model — there is no text until you stop talking —
+ * which is the trade every whisper-backed option here makes.
  *
- * Setup:
- *   1. `pnpm stt:setup` — downloads whisper-tiny.en.llamafile into
- *      .whisperfile/ (gitignored; not checked in, ~90MB).
- *   2. `pnpm stt:server` — starts it on port 8080.
- *   3. Set `STT_PROVIDER=whisper-local` in `.dev.vars` (see ./index.ts).
- *
- * Unlike Nova 3, whisperfile has no streaming/endpointing — this session
- * does its own naive energy-based VAD to chunk mic audio into utterances
- * before sending each one to the server. Quality and latency are both
- * noticeably worse than the hosted model; that's expected for this use case.
+ * The transport is a callback rather than a subclass hook because the two
+ * implementations differ only in that one function: `local-whisper.ts` POSTs
+ * to a whisperfile server, `cloudflare-whisper.ts` calls the AI binding.
  */
 
 import type { Transcriber, TranscriberSession, TranscriberSessionOptions } from "agents/voice";
 
-export interface LocalWhisperfileSTTOptions {
-  /** whisper.cpp server inference endpoint. @default "http://localhost:8080/inference" */
-  url?: string;
+/** Turns one WAV clip into text. Rejecting is fatal to the session. */
+export type WavTranscribe = (wav: ArrayBuffer) => Promise<string>;
+
+export interface VadOptions {
   /** Sample rate in Hz of the incoming PCM audio. @default 16000 */
   sampleRate?: number;
   /** Silence duration (ms) after speech that ends an utterance. @default 800 */
   silenceMs?: number;
-  /** Utterances shorter than this are dropped as noise. @default 300 */
+  /** Speech shorter than this is dropped as noise. @default 300 */
   minUtteranceMs?: number;
   /** RMS energy (0-1) above which audio is considered speech. @default 0.02 */
   energyThreshold?: number;
 }
 
-const DEFAULTS: Required<LocalWhisperfileSTTOptions> = {
-  url: "http://localhost:8080/inference",
+const DEFAULTS: Required<VadOptions> = {
   sampleRate: 16000,
   silenceMs: 800,
   minUtteranceMs: 300,
   energyThreshold: 0.02,
 };
 
-/**
- * STT provider backed by a local whisperfile server. Drop-in replacement
- * for `WorkersAINova3STT` for offline / no-Cloudflare-account development.
- */
-export class LocalWhisperfileSTT implements Transcriber {
-  #opts: Required<LocalWhisperfileSTTOptions>;
+export class VadTranscriber implements Transcriber {
+  #transcribe: WavTranscribe;
+  #opts: Required<VadOptions>;
 
-  constructor(options?: LocalWhisperfileSTTOptions) {
+  constructor(transcribe: WavTranscribe, options?: VadOptions) {
+    this.#transcribe = transcribe;
     this.#opts = { ...DEFAULTS, ...options };
   }
 
   createSession(options?: TranscriberSessionOptions): TranscriberSession {
-    return new LocalWhisperSession(this.#opts, options);
+    return new VadSession(this.#transcribe, this.#opts, options);
   }
 }
 
-class LocalWhisperSession implements TranscriberSession {
+class VadSession implements TranscriberSession {
+  #transcribe: WavTranscribe;
   #onUtterance: TranscriberSessionOptions["onUtterance"];
   #onFatalError: TranscriberSessionOptions["onFatalError"];
 
-  #opts: Required<LocalWhisperfileSTTOptions>;
+  #opts: Required<VadOptions>;
   #closed = false;
 
   #buffer: Int16Array[] = [];
-  #hasSpeech = false;
+  /** Samples in the buffer that cleared the energy threshold. */
+  #speechSamples = 0;
   #silenceSamples = 0;
 
-  constructor(opts: Required<LocalWhisperfileSTTOptions>, options?: TranscriberSessionOptions) {
+  constructor(
+    transcribe: WavTranscribe,
+    opts: Required<VadOptions>,
+    options?: TranscriberSessionOptions,
+  ) {
+    this.#transcribe = transcribe;
     this.#opts = opts;
     this.#onUtterance = options?.onUtterance;
     this.#onFatalError = options?.onFatalError;
@@ -88,7 +92,7 @@ class LocalWhisperSession implements TranscriberSession {
     const rms = Math.sqrt(sumSquares / samples.length);
 
     if (rms > this.#opts.energyThreshold) {
-      this.#hasSpeech = true;
+      this.#speechSamples += samples.length;
       this.#silenceSamples = 0;
     } else {
       this.#silenceSamples += samples.length;
@@ -96,7 +100,7 @@ class LocalWhisperSession implements TranscriberSession {
     this.#buffer.push(samples);
 
     const silenceMs = (this.#silenceSamples / this.#opts.sampleRate) * 1000;
-    if (this.#hasSpeech && silenceMs >= this.#opts.silenceMs) {
+    if (this.#speechSamples > 0 && silenceMs >= this.#opts.silenceMs) {
       this.#flush();
     }
   }
@@ -108,17 +112,18 @@ class LocalWhisperSession implements TranscriberSession {
 
   #flush(): void {
     const chunks = this.#buffer;
-    const hadSpeech = this.#hasSpeech;
+    const speechSamples = this.#speechSamples;
     this.#buffer = [];
-    this.#hasSpeech = false;
+    this.#speechSamples = 0;
     this.#silenceSamples = 0;
 
-    if (!hadSpeech) return;
+    // Measured over the speech, not the whole buffer: the buffer always holds
+    // the full silence gap that triggered this flush, so counting it would
+    // make the threshold unreachable and let every stray noise through.
+    const speechMs = (speechSamples / this.#opts.sampleRate) * 1000;
+    if (speechMs < this.#opts.minUtteranceMs) return;
 
     const totalSamples = chunks.reduce((n, c) => n + c.length, 0);
-    const durationMs = (totalSamples / this.#opts.sampleRate) * 1000;
-    if (durationMs < this.#opts.minUtteranceMs) return;
-
     const merged = new Int16Array(totalSamples);
     let offset = 0;
     for (const c of chunks) {
@@ -126,26 +131,14 @@ class LocalWhisperSession implements TranscriberSession {
       offset += c.length;
     }
 
-    this.#transcribe(merged).catch((error) => {
+    this.#emit(merged).catch((error) => {
       if (this.#closed) return;
       this.#onFatalError?.(error instanceof Error ? error : new Error(String(error)));
     });
   }
 
-  async #transcribe(samples: Int16Array): Promise<void> {
-    const wav = encodeWav(samples, this.#opts.sampleRate);
-
-    const form = new FormData();
-    form.append("file", new Blob([wav], { type: "audio/wav" }), "audio.wav");
-    form.append("response_format", "json");
-
-    const resp = await fetch(this.#opts.url, { method: "POST", body: form });
-    if (!resp.ok) {
-      throw new Error(`Local whisper server responded ${resp.status}`);
-    }
-
-    const data = (await resp.json()) as { text?: string };
-    const text = (data.text ?? "").trim();
+  async #emit(samples: Int16Array): Promise<void> {
+    const text = (await this.#transcribe(encodeWav(samples, this.#opts.sampleRate))).trim();
     if (text && !this.#closed) {
       this.#onUtterance?.(text);
     }
@@ -153,7 +146,7 @@ class LocalWhisperSession implements TranscriberSession {
 }
 
 /** Wraps raw 16-bit PCM samples in a minimal WAV (RIFF) container. */
-function encodeWav(samples: Int16Array, sampleRate: number): ArrayBuffer {
+export function encodeWav(samples: Int16Array, sampleRate: number): ArrayBuffer {
   const bytesPerSample = 2;
   const blockAlign = bytesPerSample;
   const dataSize = samples.length * bytesPerSample;

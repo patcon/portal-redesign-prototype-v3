@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Downloads the whisperfile model used by src/server/stt/local-whisper-stt.ts for
+# Downloads the whisperfile model used by src/server/stt/local-whisper.ts for
 # offline dev transcription. See README.md for details.
 set -o errexit -o nounset -o pipefail
 
