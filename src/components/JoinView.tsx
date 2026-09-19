@@ -1,6 +1,5 @@
 import { useEffect, useRef } from "react";
-import { Empty } from "@cloudflare/kumo";
-import { ChatCircleIcon } from "@phosphor-icons/react";
+import { MessageCircleIcon } from "lucide-react";
 import { navigate } from "../router";
 import { useHub } from "../hooks/useHub";
 
@@ -23,12 +22,12 @@ export function JoinView({ eventId }: { eventId: string }) {
   }, [api, eventId, hub.identified]);
 
   return (
-    <div className="flex h-screen items-center justify-center">
-      <Empty
-        icon={<ChatCircleIcon size={24} />}
-        title="Joining…"
-        description="Setting up a Durable Object for this conversation."
-      />
+    <div className="flex h-dvh flex-col items-center justify-center gap-3 px-6 text-center">
+      <MessageCircleIcon className="text-muted-foreground size-6" />
+      <p className="font-medium">Joining…</p>
+      <p className="text-muted-foreground text-sm">
+        Setting up a Durable Object for this conversation.
+      </p>
     </div>
   );
 }

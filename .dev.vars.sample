@@ -17,7 +17,7 @@
 # to that key instead of the free tier:
 # OPENROUTER_MODEL=anthropic/claude-haiku-4.5
 
-# Speech-to-text provider for table calls. Default: nova3.
+# Speech-to-text provider for conversation calls. Default: nova3.
 #   nova3          Workers AI Deepgram Nova 3 — best quality, live interim text.
 #   flux           Workers AI Deepgram Flux — same WebSocket path as nova3.
 #   whisper-local  whisperfile on this machine — offline, no Cloudflare calls,

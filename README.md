@@ -13,6 +13,13 @@ pnpm install
 pnpm start          # http://localhost:5173 → redirects to a fresh event
 ```
 
+`pnpm install` needs a checkout of [Cloudflare's `agents` monorepo] beside this
+one, at `../agents`: this prototype tracks unreleased work in the Agents SDK, so
+`agents` and `@cloudflare/ai-chat` are `link:` dependencies rather than versions
+on npm. Without it, install fails.
+
+[Cloudflare's `agents` monorepo]: https://github.com/cloudflare/agents
+
 Opening `/` mints a random event id and sends you to that event's host console.
 Serve on a LAN address (`pnpm start` already passes `--host`) and the QR code
 encodes that address, so an event runs from a laptop on a local router with no
@@ -55,8 +62,8 @@ pushes its own title, latest message and call transcript back into the hub
 (`recordChatActivity`), fenced by a per-chat sequence number inside
 `blockConcurrencyWhile` so a delayed push cannot overwrite a newer one. That
 pushed metadata is what the sidebar renders and what the host's agent tools
-read — which is how "what's happening at the tables?" costs one Durable Object
-read instead of N.
+read — which is how "what's happening in the conversations?" costs one Durable
+Object read instead of N.
 
 The host's private thread is a `GroupChat` like any other, distinguished only
 by `kind: "host"`. One chat implementation, not two.
@@ -76,14 +83,34 @@ src/
     stt/                     transcriber selection + local whisperfile
     prompts/                 onboarding and host system instructions
   components/                runs in the browser
-    HostView  ChatPane  GroupView  JoinView  JoinCode  ShareLink  ModeToggle
+    HostView  ConversationsShell  ChatPane  GroupView
+    JoinView  JoinCode  ShareLink  ModeToggle
+    adapt.ts                 agent wire shapes → design-system props
+    ui/{shadcn,chatcn}/      vendored — see below
+    dembrane/                vendored — see below
   hooks/                     useHub  useRoute  useCall
+  lib/utils.ts               vendored — re-exports `cn`
   client.tsx                 entry: route switch + createRoot
   router.ts  shared.ts  types.ts  styles.css     shared by both sides
 ```
 
 Nothing under `server/` reaches the browser bundle, and the wire contract lives
 in exactly one place (`types.ts`, `shared.ts`) rather than being described twice.
+
+### Vendored components
+
+`src/components/ui/**`, `src/components/dembrane/**` and `src/lib/utils.ts` are
+one-way copies from [`dembrane-portal-redesign`], the Storybook-first repo where
+the interface is designed. They are not edited here: `oxfmt` and `oxlint` ignore
+them so they stay byte-identical to upstream and a re-copy is a plain overwrite.
+Everything that wires them to the agents — the adapters in `adapt.ts`, the
+responsive shell in `ConversationsShell.tsx` — lives outside those directories
+for exactly that reason.
+
+They import through the `@/` alias, declared in both `tsconfig.json` and
+`vite.config.ts`.
+
+[`dembrane-portal-redesign`]: https://github.com/Dembrane/portal-redesign
 
 ## Configuration
 
@@ -132,11 +159,18 @@ pnpm stt:server   # leave running alongside `pnpm start`
 
 The point of the rebuild is how little there is of it. Measured on this repo:
 
-|                      |                  |
-| -------------------- | ---------------- |
-| Runtime dependencies | 10 (plus 15 dev) |
-| Browser code         | 862 lines        |
-| Worker code          | 859 lines        |
+|                           |                  |
+| ------------------------- | ---------------- |
+| Runtime dependencies      | 17 (plus 15 dev) |
+| Browser code, this repo's | 1,249 lines      |
+| Worker code               | 1,044 lines      |
+| Vendored component source | 4,868 lines      |
+
+Counts exclude tests. The last row is the honest asterisk on the others: the
+design system arrived as source copied into the tree rather than as packages, so
+it is code this repo carries and must read, even though it is not code written
+here and not a dependency to resolve. The first row still means what it says —
+17 things `pnpm install` fetches.
 
 For the comparison against the existing `dembrane-echo` frontend that motivated
 this, see [`docs/PLAN.md`](docs/PLAN.md) — those figures are quoted from that

@@ -1,31 +1,69 @@
-import { useCallback, useEffect, useRef, useState } from "react";
-import type { FormEvent } from "react";
-import { Button, Empty, Input, Surface, Text } from "@cloudflare/kumo";
-import {
-  ChatCircleIcon,
-  MicrophoneIcon,
-  PaperPlaneRightIcon,
-  StopIcon,
-} from "@phosphor-icons/react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { ReactNode } from "react";
 import { useAgent } from "agents/react";
 import { useAgentChat } from "@cloudflare/ai-chat/react";
+import type { ChatUser } from "@/components/ui/chatcn/types";
+import { CallScreen, Conversation, LiveCallBanner } from "@/components/dembrane";
+import type { ActivityMessageData } from "@/components/dembrane/Activity";
+import { Button } from "@/components/ui/shadcn/button";
+import {
+  Drawer,
+  DrawerClose,
+  DrawerContent,
+  DrawerFooter,
+  DrawerHeader,
+  DrawerTitle,
+} from "@/components/ui/shadcn/drawer";
 import { MAX_TEXT } from "../shared";
 import type { ConversationState } from "../types";
 import { useCall } from "../hooks/useCall";
+import { createTimestampBook, toConversationMessages } from "./adapt";
 
 /**
- * One conversation's messages, composer and call controls. Used by both the
- * host console and a conversation's own device; the two differ only in which
- * callbacks they pass.
+ * One conversation's messages, composer and call. Used by both the host console and
+ * a conversation's own device; the two differ only in which callbacks they pass.
+ *
+ * Everything visible here comes from the copied design system — `Conversation` draws
+ * the header, the thread and the composer, `CallScreen` and `LiveCallBanner` draw the
+ * call. What this component owns is the wiring: the sockets above, and the small
+ * amount of call state the agents SDK does not keep for it.
  */
 export function ChatPane({
   eventId,
   chatId,
+  currentUser,
+  title,
+  subtitle,
+  avatar,
+  actions,
+  callable = true,
   onActivity,
   onState,
 }: {
   eventId: string;
   chatId: string;
+  currentUser: ChatUser;
+  title: string;
+  subtitle?: string;
+  /** Passed through to `Conversation`; the shell uses it for a back button. */
+  avatar?: ReactNode | null;
+  /**
+   * Header icons. Supplying this replaces `Conversation`'s default phone-and-search
+   * pair outright, so it is handed the call state and the way to start one — the
+   * button has to be restated by whoever takes the slot over. It is also told
+   * whether this conversation takes calls at all, so a slot that draws a phone
+   * button can disable it rather than each caller tracking that separately.
+   */
+  actions?: (call: { callable: boolean; inCall: boolean; startCall: () => void }) => ReactNode;
+  /**
+   * Whether this conversation can hold a call. False for the host's own thread:
+   * it is a private chat with the model about the room, not a conversation
+   * anyone speaks into, and a transcript left behind there would be the host
+   * talking to themselves. Off, the call button stays on screen but disabled —
+   * a thread that visibly takes no calls, rather than one whose phone has
+   * quietly gone missing — and no voice socket is opened for the thread at all.
+   */
+  callable?: boolean;
   onActivity?: () => void;
   onState?: (state: ConversationState) => void;
 }) {
@@ -42,14 +80,12 @@ export function ChatPane({
     basePath,
     onStateUpdate: (state) => onState?.(state),
   });
-  const call = useCall(basePath);
+  const call = useCall(callable ? basePath : null);
   const { messages, sendMessage, status } = useAgentChat({
     agent,
     experimental_throttle: 100,
   });
-  const [draft, setDraft] = useState("");
   const isStreaming = status === "streaming" || status === "submitted";
-  const tail = useRef<HTMLDivElement>(null);
 
   // The host's sidebar reads pushed metadata, which only lands once a turn
   // finishes — so refresh on the streaming edge, not on every token. Held in
@@ -65,112 +101,147 @@ export function ChatPane({
     if (!isStreaming) activity.current?.();
   }, [isStreaming]);
 
-  useEffect(() => {
-    tail.current?.scrollIntoView({ block: "nearest" });
-  }, [messages]);
-
-  const send = useCallback(
-    (event: FormEvent) => {
-      event.preventDefault();
-      const text = draft.trim().slice(0, MAX_TEXT);
-      if (!text || isStreaming) return;
-      setDraft("");
-      sendMessage({ role: "user", parts: [{ type: "text", text }] });
-    },
-    [draft, isStreaming, sendMessage],
+  // Survives re-renders but not a change of conversation, which is what `key`
+  // on the caller's side already gives us: a different chat is a different pane.
+  // Held as lazily-initialised state rather than a ref, so it is never read
+  // during render before an effect has filled it in.
+  const [timestampOf] = useState(createTimestampBook);
+  const thread = useMemo(
+    () => toConversationMessages(messages, currentUser, timestampOf),
+    [messages, currentUser, timestampOf],
   );
 
+  const send = useCallback(
+    (text: string) => {
+      const trimmed = text.trim().slice(0, MAX_TEXT);
+      if (!trimmed || isStreaming) return;
+      sendMessage({ role: "user", parts: [{ type: "text", text: trimmed }] });
+    },
+    [isStreaming, sendMessage],
+  );
+
+  // What the SDK's voice client does not track for us: `startedAt`, the clock both call
+  // surfaces count from, and which screen the call is showing on. Mute is *not* here —
+  // it belongs to the voice client, which is what gates the microphone.
+  const [startedAt, setStartedAt] = useState<Date | null>(null);
+  const [onCallScreen, setOnCallScreen] = useState(false);
+  // Synchronising with an external system — the voice socket — which is the one
+  // thing effects are for. `call.inCall` is pushed from the transport, so there is
+  // no render-time value to derive these from and no event handler that sees the
+  // call end: it can end because the server hung up.
+  /* oxlint-disable react/set-state-in-effect */
+  useEffect(() => {
+    if (call.inCall) {
+      setStartedAt((at) => at ?? new Date());
+      setOnCallScreen(true);
+    } else {
+      setStartedAt(null);
+      setOnCallScreen(false);
+    }
+  }, [call.inCall]);
+  /* oxlint-enable react/set-state-in-effect */
+
+  // The call as it is being spoken: what has been transcribed, plus the phrase still
+  // in flight. `CallScreen` takes one block of prose — the transcription is not
+  // diarized, so there are no turns to break it into.
+  const transcript = [call.heard, call.interim].filter(Boolean).join(" ");
+
+  // The activity whose panel is open, or `null`. A call's card carries a trimmed line
+  // of its transcript; the whole thing is behind the click, in the drawer below.
+  const [openedActivity, setOpenedActivity] = useState<ActivityMessageData | null>(null);
+
+  // Starts a call, or returns to the one already running. Both the header button and
+  // the banner want this single "show me the call" action.
+  const openCall = useCallback(() => {
+    if (call.inCall) setOnCallScreen(true);
+    else call.start();
+  }, [call]);
+
   return (
-    <div className="flex min-h-0 flex-1 flex-col">
-      <div className="min-h-0 flex-1 space-y-2 overflow-y-auto p-4">
-        {messages.length === 0 ? (
-          <Empty
-            icon={<ChatCircleIcon size={24} />}
-            title="Connecting…"
-            description="This conversation's Durable Object is waking up."
-          />
-        ) : (
-          messages.map((message) => {
-            const text = message.parts
-              .map((part) => (part.type === "text" ? part.text : ""))
-              .join("");
-            if (!text) return null;
-            const isCall =
-              (message.metadata as { kind?: string } | undefined)?.kind === "voice-call";
-            return (
-              <div
-                key={message.id}
-                className={`flex ${message.role === "user" ? "justify-end" : "justify-start"}`}
-              >
-                <Surface
-                  className={`max-w-[80%] rounded-lg px-3 py-2 whitespace-pre-wrap ${
-                    message.role === "user" ? "bg-kumo-brand/10" : ""
-                  }`}
-                >
-                  {isCall ? (
-                    <>
-                      <Text size="xs" variant="secondary">
-                        🎙️ Voice call
-                      </Text>
-                      <Text size="sm">{text.replace(/^Voice call transcript:\n/, "")}</Text>
-                    </>
-                  ) : (
-                    <Text size="sm">{text}</Text>
-                  )}
-                </Surface>
-              </div>
-            );
-          })
-        )}
-        <div ref={tail} />
-      </div>
-      {call.inCall && (
-        <div className="border-t border-kumo-line p-3">
-          <div className="mb-2 h-1 w-full overflow-hidden rounded-full bg-kumo-tint">
-            <div
-              className="h-full bg-kumo-brand transition-all duration-75"
-              style={{ width: `${Math.min(call.level * 500, 100)}%` }}
-            />
+    <>
+      <Conversation
+        currentUser={currentUser}
+        title={title}
+        subtitle={subtitle}
+        avatar={avatar}
+        actions={actions?.({ callable, inCall: call.inCall, startCall: openCall })}
+        onCall={callable && !call.inCall ? call.start : undefined}
+        messages={thread}
+        onActivityOpen={setOpenedActivity}
+        onSend={send}
+        placeholder={isStreaming ? "Thinking…" : "Say something…"}
+        banners={
+          <>
+            {call.inCall && !onCallScreen && (
+              <LiveCallBanner
+                startedAt={startedAt ?? undefined}
+                muted={call.muted}
+                onReturn={openCall}
+              />
+            )}
+            {call.error && (
+              <p className="bg-destructive/10 text-destructive px-4 py-2 text-xs">{call.error}</p>
+            )}
+          </>
+        }
+      />
+
+      {/*
+        Half the viewport, the shape the design repo settles on: the panel is a place
+        rather than a message, so it opens to the same size every time and leaves the
+        top of the conversation readable behind it.
+      */}
+      <Drawer
+        open={openedActivity !== null}
+        onOpenChange={(next) => !next && setOpenedActivity(null)}
+      >
+        {/*
+          No `DrawerDescription`: the card's description is a trimmed opening of the
+          very transcript below it, so printing it here is the same words twice, the
+          second time directly above the full version. `aria-describedby={undefined}`
+          is what Radix needs to stop looking for the description that is gone.
+        */}
+        <DrawerContent className="h-[50dvh]!" aria-describedby={undefined}>
+          <DrawerHeader>
+            <DrawerTitle>{openedActivity?.activity.title ?? "Activity"}</DrawerTitle>
+          </DrawerHeader>
+          {/*
+            The transcript as it was spoken: one undiarized blob, shown the way
+            `CallScreen` shows it while the call is live. An empty `detail` is a call
+            that ended before any audio came back, which is worth saying rather than
+            leaving as a blank panel.
+          */}
+          <div className="text-muted-foreground flex-1 space-y-3 overflow-y-auto px-4 pb-4">
+            {openedActivity?.activity.detail ? (
+              <p className="whitespace-pre-wrap">{openedActivity.activity.detail}</p>
+            ) : (
+              <p>No transcript — the call ended before any audio came back.</p>
+            )}
           </div>
-          <Text size="xs" variant="secondary">
-            {call.heard || call.interim
-              ? [call.heard, call.interim].filter(Boolean).join(" ")
-              : "Listening…"}
-          </Text>
+          <DrawerFooter>
+            <DrawerClose asChild>
+              <Button variant="outline">Close</Button>
+            </DrawerClose>
+          </DrawerFooter>
+        </DrawerContent>
+      </Drawer>
+
+      {onCallScreen && (
+        // Fixed rather than a sibling in the flex column: the call is a screen that
+        // covers the conversation, and `CallScreen` is `h-full` with no position of
+        // its own, so the overlay is this component's job.
+        <div className="fixed inset-0 z-50">
+          <CallScreen
+            title={title}
+            startedAt={startedAt ?? undefined}
+            transcript={transcript}
+            muted={call.muted}
+            onMutedChange={call.toggleMute}
+            onMinimize={() => setOnCallScreen(false)}
+            onHangUp={call.stop}
+          />
         </div>
       )}
-      {call.error && (
-        <div className="border-t border-kumo-line px-3 py-2">
-          <Text size="xs" variant="secondary">
-            {call.error}
-          </Text>
-        </div>
-      )}
-      <form onSubmit={send} className="flex gap-2 border-t border-kumo-line p-3">
-        <Input
-          value={draft}
-          aria-label="Message"
-          onChange={(event) => setDraft(event.currentTarget.value)}
-          placeholder={isStreaming ? "Thinking…" : "Say something…"}
-          className="flex-1"
-        />
-        <Button
-          type="button"
-          variant={call.inCall ? "destructive" : "secondary"}
-          shape="square"
-          aria-label={call.inCall ? "End call" : "Start call"}
-          onClick={call.inCall ? call.stop : call.start}
-          icon={call.inCall ? <StopIcon size={16} /> : <MicrophoneIcon size={16} />}
-        />
-        <Button
-          type="submit"
-          variant="primary"
-          disabled={isStreaming || draft.trim() === ""}
-          icon={<PaperPlaneRightIcon size={16} />}
-        >
-          Send
-        </Button>
-      </form>
-    </div>
+    </>
   );
 }

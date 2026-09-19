@@ -5,11 +5,15 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <link rel="icon" href="/favicon.ico" />
     <title>Routing — one DO per chat</title>
+    <!--
+      Applied before first paint, so a dark-mode reload never flashes light. shadcn
+      swaps its palette on a `dark` class rather than an attribute, which is why this
+      touches `classList` — `ModeToggle` writes the same two things back.
+    -->
     <script>
       (() => {
-        const stored = localStorage.getItem("theme");
-        const mode = stored || "light";
-        document.documentElement.setAttribute("data-mode", mode);
+        const mode = localStorage.getItem("theme") || "light";
+        document.documentElement.classList.toggle("dark", mode === "dark");
         document.documentElement.style.colorScheme = mode;
       })();
     </script>
