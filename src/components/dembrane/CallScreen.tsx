@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ComponentProps, type ReactNode } from 'react'
+import { useEffect, useMemo, useRef, useState, type ComponentProps, type ReactNode } from 'react'
 import {
   ChevronDown,
   ChevronUp,
@@ -366,13 +366,21 @@ function CallControlsDrawer({
   // A fraction would only approximate the header's height, and would drift with the viewport:
   // 0.9 clears 88px at phone height and half that on a short window. So: measure.
   const expandedSnap = `${useViewportHeight() - HEADER_HEIGHT}px`
+  /**
+   * Memoised for its identity, not for the cost. vaul re-runs the effect that
+   * writes the sheet's transform whenever this array changes, which snaps it
+   * back to the active point — so a fresh array on every render cancels a drag
+   * in progress. The transcript grows while the call is live, so the drawer
+   * could only be pulled back down once muting stopped the re-renders.
+   */
+  const snapPoints = useMemo(() => [CONTROLS_SNAP, expandedSnap], [expandedSnap])
 
   return (
     <Drawer
       open
       modal={false}
       dismissible={false}
-      snapPoints={[CONTROLS_SNAP, expandedSnap]}
+      snapPoints={snapPoints}
       activeSnapPoint={snap}
       setActiveSnapPoint={setSnap}
     >
