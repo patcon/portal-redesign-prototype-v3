@@ -105,6 +105,19 @@ class VadSession implements TranscriberSession {
     }
   }
 
+  /**
+   * Emit the buffered utterance now instead of waiting for the silence gap.
+   *
+   * Called when the client mutes: the audio stream stops outright, so the
+   * 800ms of silence this VAD endpoints on would never arrive and a
+   * half-finished sentence would sit here until the microphone came back.
+   * Buffered silence with no speech in it is simply discarded.
+   */
+  flush(): void {
+    if (this.#closed) return;
+    this.#flush();
+  }
+
   close(): void {
     this.#closed = true;
     this.#buffer = [];
@@ -121,9 +134,20 @@ class VadSession implements TranscriberSession {
     // the full silence gap that triggered this flush, so counting it would
     // make the threshold unreachable and let every stray noise through.
     const speechMs = (speechSamples / this.#opts.sampleRate) * 1000;
-    if (speechMs < this.#opts.minUtteranceMs) return;
 
     const totalSamples = chunks.reduce((n, c) => n + c.length, 0);
+    // The buffer holds everything since the last flush, leading silence
+    // included, so a long pause makes the next clip enormous. Logged because
+    // that is the thing to watch when transcription stops after a pause.
+    console.log(
+      `[vad] flush: ${Math.round(speechMs)}ms speech in ${Math.round(
+        (totalSamples / this.#opts.sampleRate) * 1000,
+      )}ms clip (${Math.round((totalSamples * 2 + 44) / 1024)}KB)${
+        speechMs < this.#opts.minUtteranceMs ? " — dropped, under minUtteranceMs" : ""
+      }`,
+    );
+    if (speechMs < this.#opts.minUtteranceMs) return;
+
     const merged = new Int16Array(totalSamples);
     let offset = 0;
     for (const c of chunks) {

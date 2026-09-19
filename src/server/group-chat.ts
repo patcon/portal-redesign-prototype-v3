@@ -4,6 +4,7 @@ import { AIChatAgent } from "@cloudflare/ai-chat";
 import type { UIMessage } from "ai";
 import { convertToModelMessages, jsonSchema, stepCountIs, streamText, tool } from "ai";
 import { getModel } from "./model";
+import { CallLog } from "./call-log";
 import { getTranscriber } from "./stt";
 import { ONBOARDING_INSTRUCTIONS, WELCOME_MESSAGE } from "./prompts/onboarding";
 import { HOST_INSTRUCTIONS, HOST_WELCOME_MESSAGE } from "./prompts/host";
@@ -58,10 +59,11 @@ export class GroupChat extends ChatAgent<Env, ConversationState> {
   transcriber = getTranscriber(this.env);
 
   /**
-   * Utterances of calls in progress, per connection. In memory: an open call
-   * holds its socket open, so the object stays awake for the call's duration.
+   * Utterances of calls in progress, per connection. Kept in storage, not in
+   * memory: an open socket does not keep this object resident, so a call can
+   * outlive the instance that started it.
    */
-  #calls = new Map<string, string[]>();
+  #calls = new CallLog(this.ctx.storage);
 
   async init(owner: ChatOwner): Promise<void> {
     await this.ctx.storage.put("owner", owner);
@@ -165,21 +167,23 @@ export class GroupChat extends ChatAgent<Env, ConversationState> {
     };
   }
 
-  onCallStart(connection: Connection): void {
+  /**
+   * Also runs when a call is resumed on a rebuilt instance, which is why the
+   * log is opened idempotently rather than reset.
+   */
+  async onCallStart(connection: Connection): Promise<void> {
     console.log(`[call] start ${connection.id.slice(0, 8)}`);
     // The mixin has already created the transcriber session and waited for it
     // to be ready; this is where it gets a name, so hang-up can go looking for
     // what the call heard.
     this.transcriber.claim(connection.id);
-    this.#calls.set(connection.id, []);
+    await this.#calls.start(connection.id);
   }
 
   /** Each finished utterance extends the call and refreshes the host's view. */
   async onTranscript(text: string, connection: Connection): Promise<void> {
     console.log(`[call] transcript ${connection.id.slice(0, 8)}: ${JSON.stringify(text)}`);
-    const utterances = this.#calls.get(connection.id) ?? [];
-    utterances.push(text);
-    this.#calls.set(connection.id, utterances);
+    const utterances = await this.#calls.append(connection.id, text);
     await this.ctx.storage.put("transcript", utterances.join(" ").slice(-TRANSCRIPT_EXCERPT));
     await this.#pushToHub();
   }
@@ -190,8 +194,7 @@ export class GroupChat extends ChatAgent<Env, ConversationState> {
    * transcript unprompted, but it is now in the context for the next question.
    */
   async onCallEnd(connection: Connection): Promise<void> {
-    const utterances = this.#calls.get(connection.id) ?? [];
-    this.#calls.delete(connection.id);
+    const utterances = await this.#calls.end(connection.id);
 
     // Deepgram only finalises an utterance once its endpointer hears a pause,
     // and in a noisy room — a fan, a busy venue — that pause may never come.

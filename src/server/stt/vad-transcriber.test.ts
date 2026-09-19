@@ -139,6 +139,46 @@ describe("VadTranscriber", () => {
     expect(onFatalError).not.toHaveBeenCalled();
   });
 
+  // Muting stops the audio stream outright, so the silence this VAD endpoints
+  // on never arrives and the sentence in progress would be stranded.
+  it("emits the utterance in progress when asked to flush", async () => {
+    const { transcribe, onUtterance, session } = setup();
+    session.feed(speech(500));
+    session.flush?.();
+    await settle();
+    expect(transcribe).toHaveBeenCalledTimes(1);
+    expect(onUtterance).toHaveBeenCalledWith("heard something");
+  });
+
+  it("does not transcribe a flush that caught only silence", async () => {
+    const { transcribe, session } = setup();
+    session.feed(silence(2000));
+    session.flush?.();
+    await settle();
+    expect(transcribe).not.toHaveBeenCalled();
+  });
+
+  // The flush consumed the buffer, so unmuting mid-pause must not resend it.
+  it("starts clean after a flush", async () => {
+    const { transcribe, wavs, session } = setup();
+    session.feed(speech(500));
+    session.flush?.();
+    session.feed(speech(500));
+    session.feed(silence(800));
+    await settle();
+    expect(transcribe).toHaveBeenCalledTimes(2);
+    expect(wavs[1].byteLength).toBe(44 + (1300 / 1000) * SAMPLE_RATE * 2);
+  });
+
+  it("ignores a flush after close", async () => {
+    const { transcribe, session } = setup();
+    session.feed(speech(500));
+    session.close();
+    session.flush?.();
+    await settle();
+    expect(transcribe).not.toHaveBeenCalled();
+  });
+
   it("ignores audio fed after close", async () => {
     const { transcribe, session } = setup();
     session.close();

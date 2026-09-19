@@ -109,6 +109,12 @@ export class CallTranscriber implements Transcriber {
         }
       };
     }
+    if (session.flush) {
+      wrapped.flush = () => {
+        console.log(`[stt] flush requested (client muted mid-utterance)`);
+        session.flush?.();
+      };
+    }
     if (session.updateAgentContext) {
       wrapped.updateAgentContext = (text) => session.updateAgentContext?.(text);
     }
