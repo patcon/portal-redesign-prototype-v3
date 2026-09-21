@@ -1,6 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
 
 /**
+ * `getModel` returns a model wrapped in the logging middleware, so these
+ * assert on which provider factory was called with which id rather than on
+ * the returned object, which is now the wrapper rather than the model.
+ *
  * The two provider factories are faked at the module boundary — the real ones
  * would need a live AI binding and an OpenRouter key, and what is worth
  * testing is only which of them gets called, with which id.
@@ -33,8 +37,9 @@ describe("getModel", () => {
   // Workers AI ids keep their `@cf/` prefix — the spec *is* the model id, so
   // it goes through whole rather than being reassembled.
   it("passes a Workers AI spec through unchanged", () => {
-    const model = getModel(env({ TEXT_MODEL: "@cf/moonshotai/kimi-k2.7-code" }));
-    expect(model).toMatchObject({ tag: "workers-ai", model: "@cf/moonshotai/kimi-k2.7-code" });
+    getModel(env({ TEXT_MODEL: "@cf/moonshotai/kimi-k2.7-code" }));
+    expect(workersAI.mock.lastCall?.[0]).toBe("@cf/moonshotai/kimi-k2.7-code");
+    expect(createOpenRouter).not.toHaveBeenCalled();
   });
 
   it("forwards session affinity to Workers AI", () => {
@@ -45,18 +50,16 @@ describe("getModel", () => {
   // OpenRouter names its own vendor, so the host prefix is dropped and the
   // rest — slash included — is the id it expects.
   it("strips the host from an OpenRouter spec", () => {
-    const model = getModel(
+    getModel(
       env({ TEXT_MODEL: "@openrouter/anthropic/claude-haiku-4.5", OPENROUTER_API_KEY: "sk-test" }),
     );
-    expect(model).toMatchObject({ tag: "openrouter", model: "anthropic/claude-haiku-4.5" });
+    expect(openRouter.mock.lastCall?.[0]).toBe("anthropic/claude-haiku-4.5");
     expect(createOpenRouter).toHaveBeenCalledWith({ apiKey: "sk-test" });
   });
 
   it("defaults to a Workers AI model that needs no key and no paid plan", () => {
-    expect(getModel(env())).toMatchObject({
-      tag: "workers-ai",
-      model: "@cf/meta/llama-3.3-70b-instruct-fp8-fast",
-    });
+    getModel(env());
+    expect(workersAI.mock.lastCall?.[0]).toBe("@cf/meta/llama-3.3-70b-instruct-fp8-fast");
   });
 
   it("says which key is missing when OpenRouter has none", () => {

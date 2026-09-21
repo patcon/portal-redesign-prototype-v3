@@ -85,7 +85,18 @@ export class GroupChat extends ChatAgent<Env, ConversationState> {
     ]);
   }
 
-  async onChatMessage() {
+  /**
+   * `options.abortSignal` is forwarded to the model call, as the Agents SDK
+   * chat docs require: without it a client that disconnects or hits stop
+   * leaves the provider generating a turn nobody will read.
+   */
+  async onChatMessage(
+    // Derived from the base rather than named: the linked `agents` checkout
+    // resolves its own copy of `ai`, so spelling these types out here pits two
+    // versions of `GenerateTextOnFinishCallback` against each other.
+    ...args: Parameters<AIChatAgent<Env, ConversationState>["onChatMessage"]>
+  ) {
+    const abortSignal = args[1]?.abortSignal;
     const owner = await this.ctx.storage.get<ChatOwner>("owner");
     const isHost = owner?.kind === "host";
     const result = streamText({
@@ -95,8 +106,17 @@ export class GroupChat extends ChatAgent<Env, ConversationState> {
       tools: isHost && owner ? this.#hostTools(owner.eventId) : this.#conversationTools(),
       // Room for a tool call and the answer that reads its result.
       stopWhen: stepCountIs(5),
+      abortSignal,
+      // `streamText` does not throw on a provider failure — without this the
+      // turn ends quietly and the thread just never gains an answer.
+      onError: ({ error }) => console.error("[GroupChat] model turn failed", error),
     });
-    return result.toUIMessageStreamResponse();
+    return result.toUIMessageStreamResponse({
+      // The default masks every failure as "An error occurred", which hides
+      // the one thing worth reading. This is a prototype behind a join code,
+      // so the real message is more use in the browser than a generic one.
+      onError: (error) => (error instanceof Error ? error.message : String(error)),
+    });
   }
 
   /** A conversation names itself during onboarding; the host sees the name. */

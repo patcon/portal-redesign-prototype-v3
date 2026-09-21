@@ -1,7 +1,9 @@
 import { createOpenRouter } from "@openrouter/ai-sdk-provider";
 import { createWorkersAI } from "workers-ai-provider";
 import type { LanguageModel } from "ai";
+import { wrapLanguageModel } from "ai";
 import { parseModelSpec } from "./model-spec";
+import { logModelCalls } from "./model-logging";
 
 /**
  * The chat model, named by `TEXT_MODEL` as a single `@host/model` spec (see
@@ -28,6 +30,20 @@ function textSpec(env: Env): string {
 
 export function getModel(env: Env, options?: { sessionAffinity?: string }): LanguageModel {
   const spec = textSpec(env);
+  // Every model goes out through the same tap, so a silent turn leaves a trail
+  // in the dev console whichever host answered it. See `model-logging.ts`.
+  return wrapLanguageModel({
+    model: rawModel(env, spec, options),
+    middleware: logModelCalls(spec),
+  });
+}
+
+/** `LanguageModel` also admits a bare id string; the wrapper needs the object. */
+function rawModel(
+  env: Env,
+  spec: string,
+  options?: { sessionAffinity?: string },
+): Exclude<LanguageModel, string> {
   const { host, model } = parseModelSpec(spec, "TEXT_MODEL");
 
   switch (host) {
