@@ -28,8 +28,14 @@
   ],
   // One `@host/model` spec per task; both default in code, so these stay empty.
   // See src/server/model.ts and src/server/stt/index.ts for the accepted hosts.
+  //
+  // TEXT_MODEL is set rather than left to the code default because the default
+  // — `@cf/meta/llama-3.3-70b-instruct-fp8-fast` — is a poor tool caller: given
+  // "we're a group of 5" it called `setParticipantCount` on all five steps and
+  // never wrote a word, so the turn reached the browser empty. GLM is the model
+  // the Agents SDK chat docs use in their own example.
   "vars": {
-    "TEXT_MODEL": "",
+    "TEXT_MODEL": "@cf/zai-org/glm-4.7-flash",
     "STT_MODEL": "",
     "STT_WHISPER_URL": "",
   },
