@@ -52,3 +52,37 @@ Rules:
 - Do not invent questions for the discussion itself. The host supplies those.
 - Once onboarding is done, answer normally and stay out of the way.
 `.trim();
+
+/**
+ * The conversation's own state, as the model sees it at the top of each turn.
+ *
+ * Without this the agent is blind to its own `state`: the only trace of a
+ * recorded participant count is a `tool-result` part buried in the history, so
+ * a small model cannot tell "already set" from "never set" and sets it again,
+ * every turn, until the turn runs out of steps with no text written.
+ *
+ * The shape follows pizzo's "Current song:" block
+ * (`agents/studio/agents/song/agent.ts`): a labelled dash list rather than a
+ * JSON object, rebuilt from state on every turn, with absent values spelled
+ * out in words. A `null` in JSON reads as missing data; "not yet chosen" reads
+ * as a fact about the conversation, which is what it is.
+ */
+export function conversationStatus(
+  state: { name: string | null; participants: number | null },
+  options: { hasTranscript: boolean },
+): string {
+  return [
+    "Current conversation:",
+    `- Name: ${state.name ?? "not yet chosen"}`,
+    `- Participants: ${state.participants ?? "not yet recorded"}`,
+    `- Voice recording: ${
+      options.hasTranscript ? "at least one call recorded" : "nothing recorded yet"
+    }`,
+    "",
+    "These are already recorded. Do not call a tool to set a value that is",
+    "already correct above — only when it is missing, or the participants ask",
+    "you to change it.",
+  ]
+    .join("\n")
+    .trimEnd();
+}

@@ -6,7 +6,7 @@ import { convertToModelMessages, jsonSchema, stepCountIs, streamText, tool } fro
 import { getModel } from "./model";
 import { CallLog } from "./call-log";
 import { getTranscriber } from "./stt";
-import { ONBOARDING_INSTRUCTIONS, WELCOME_MESSAGE } from "./prompts/onboarding";
+import { conversationStatus, ONBOARDING_INSTRUCTIONS, WELCOME_MESSAGE } from "./prompts/onboarding";
 import { HOST_INSTRUCTIONS, HOST_WELCOME_MESSAGE } from "./prompts/host";
 import type { ChatMeta, ChatOwner, ConversationState } from "../types";
 
@@ -101,7 +101,13 @@ export class GroupChat extends ChatAgent<Env, ConversationState> {
     const isHost = owner?.kind === "host";
     const result = streamText({
       model: getModel(this.env, { sessionAffinity: this.sessionAffinity }),
-      system: isHost ? HOST_INSTRUCTIONS : ONBOARDING_INSTRUCTIONS,
+      // Rebuilt every turn rather than a constant: a conversation's agent has
+      // to be told its own state, or it cannot tell what it has already set.
+      system: isHost
+        ? HOST_INSTRUCTIONS
+        : `${ONBOARDING_INSTRUCTIONS}\n\n${conversationStatus(this.state, {
+            hasTranscript: Boolean(await this.ctx.storage.get<string>("transcript")),
+          })}`,
       messages: await convertToModelMessages(this.messages),
       tools: isHost && owner ? this.#hostTools(owner.eventId) : this.#conversationTools(),
       // Room for a tool call and the answer that reads its result.
@@ -124,7 +130,7 @@ export class GroupChat extends ChatAgent<Env, ConversationState> {
     return {
       setConversationName: tool({
         description:
-          "Set this conversation's name, so the host can tell the conversations apart. Call it as soon as the participants say what to call theirs.",
+          "Set this conversation's name, so the host can tell the conversations apart. Call it as soon as the participants say what to call theirs, and again only if they rename it.",
         inputSchema: jsonSchema<{ name: string }>({
           type: "object",
           properties: { name: { type: "string", maxLength: 60 } },
@@ -140,7 +146,7 @@ export class GroupChat extends ChatAgent<Env, ConversationState> {
       }),
       setParticipantCount: tool({
         description:
-          "Record how many people are taking part in this conversation: 1 if they are recording on their own or say they are not a group, otherwise the number they give.",
+          "Record how many people are taking part in this conversation: 1 if they are recording on their own or say they are not a group, otherwise the number they give. Call it only when the number is new or has changed — never to confirm a number already recorded.",
         inputSchema: jsonSchema<{ count: number }>({
           type: "object",
           properties: { count: { type: "integer", minimum: 1, maximum: 100 } },
