@@ -33,7 +33,10 @@
   // — `@cf/meta/llama-3.3-70b-instruct-fp8-fast` — is a poor tool caller: given
   // "we're a group of 5" it called `setParticipantCount` on all five steps and
   // never wrote a word, so the turn reached the browser empty. GLM is the model
-  // the Agents SDK chat docs use in their own example.
+  // the Agents SDK chat docs use in their own example, and it keeps this file
+  // keyless. For onboarding itself, `@openrouter/anthropic/claude-haiku-4.5`
+  // is the one that gets it right first time — it needs a key, so it belongs
+  // in `.dev.vars`, which overrides whatever is here.
   "vars": {
     "TEXT_MODEL": "@cf/zai-org/glm-4.7-flash",
     "STT_MODEL": "",

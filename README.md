@@ -129,12 +129,18 @@ STT_MODEL=@local/openai/whisper-tiny-en
 
 ### Chat model
 
-`TEXT_MODEL` defaults to `@cf/meta/llama-3.3-70b-instruct-fp8-fast`. Two hosts:
+`TEXT_MODEL` defaults to `@cf/meta/llama-3.3-70b-instruct-fp8-fast` in code and
+to `@cf/zai-org/glm-4.7-flash` in `wrangler.jsonc`, which `.dev.vars` in turn
+overrides. Onboarding leans on tool calling — the model names the conversation
+and records how many people are in it while still writing a reply — and the
+small Workers AI models are unreliable at that, so `.dev.vars.sample` sets
+`@openrouter/anthropic/claude-haiku-4.5`, which gets it right first time. Two
+hosts:
 
-| Host              | Takes                                                                             | Notes                                                                                                                              |
-| ----------------- | --------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
-| `@cf/...`         | any [Workers AI text model](https://developers.cloudflare.com/workers-ai/models/) | No keys. `@cf/moonshotai/kimi-k2.7-code` is better but needs a paid Workers plan ("5035: not available on the Workers Free plan"). |
-| `@openrouter/...` | any OpenRouter model                                                              | Needs `OPENROUTER_API_KEY`. `@openrouter/openrouter/free` is capped at 50 requests a day without credits.                          |
+| Host              | Takes                                                                             | Notes                                                                                                                                                                      |
+| ----------------- | --------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `@cf/...`         | any [Workers AI text model](https://developers.cloudflare.com/workers-ai/models/) | No keys. `@cf/moonshotai/kimi-k2.7-code` is better but needs a paid Workers plan ("5035: not available on the Workers Free plan").                                         |
+| `@openrouter/...` | any OpenRouter model                                                              | Needs `OPENROUTER_API_KEY`. `@openrouter/anthropic/claude-haiku-4.5` is the recommended one. `@openrouter/openrouter/free` is capped at 50 requests a day without credits. |
 
 Neither is enumerated in code — whatever follows the host goes straight to the
 provider, so any catalog id works without a change.

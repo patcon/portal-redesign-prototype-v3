@@ -5,7 +5,12 @@
 # the rest is the model id. Switching provider is a one-line edit, and the host
 # console header shows the live specs back to you, ready to paste.
 
-# Chat model. Default: @cf/meta/llama-3.3-70b-instruct-fp8-fast.
+# Chat model. Default: @cf/meta/llama-3.3-70b-instruct-fp8-fast, though
+# wrangler.jsonc overrides that with @cf/zai-org/glm-4.7-flash, which can
+# actually call a tool. Onboarding asks the model to name the conversation and
+# count the people in it while still writing a reply, and the small Workers AI
+# models are unreliable at that; @openrouter/anthropic/claude-haiku-4.5 is the
+# one that gets it right first time, so it is what the line below sets.
 #   @cf/...          any Workers AI text model, through the AI binding, no keys.
 #                    @cf/moonshotai/kimi-k2.7-code is better but needs a paid
 #                    Workers plan ("5035: not available on the Workers Free plan").
@@ -14,7 +19,7 @@
 #                    without credits — switch back to @cf/... when it runs out.
 #                    With your own Anthropic key added to OpenRouter (BYOK), a
 #                    Claude model bills to that key instead of the free tier.
-# TEXT_MODEL=@openrouter/anthropic/claude-haiku-4.5
+TEXT_MODEL=@openrouter/anthropic/claude-haiku-4.5
 # Get a key at https://openrouter.ai/keys
 # OPENROUTER_API_KEY=<your-openrouter-api-key>
 
