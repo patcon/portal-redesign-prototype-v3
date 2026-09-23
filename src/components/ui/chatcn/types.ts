@@ -15,7 +15,10 @@ export interface ChatMessageData {
   text?: string
   images?: { url: string; width: number; height: number; alt?: string }[]
   files?: { name: string; size: number; type: string; url: string }[]
-  voice?: { url: string; duration: number; waveform: number[] }
+  // `title` diverges from upstream chatcn, and has to be re-applied after a
+  // re-pull: a voice note here is a call, and says so in the same words and the
+  // same type as the activity card the call ends on.
+  voice?: { url: string; duration: number; waveform: number[]; title?: string }
   linkPreview?: {
     url: string
     title: string

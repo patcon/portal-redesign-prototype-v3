@@ -78,6 +78,14 @@ describe("ChatVoiceMessage", () => {
     expect(screen.getByText("0:30")).toBeTruthy();
   });
 
+  it("shows the title the voice note was given", () => {
+    renderVoice({
+      ...VOICE,
+      voice: { ...VOICE.voice!, title: "Voice call started" },
+    });
+    expect(screen.getByText("Voice call started")).toBeTruthy();
+  });
+
   it("draws one bar per waveform sample", () => {
     const { container } = renderVoice();
     expect(container.querySelectorAll("[data-slot='chat-voice-bar']")).toHaveLength(3);

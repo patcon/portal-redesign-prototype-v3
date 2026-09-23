@@ -392,72 +392,81 @@ function ChatVoiceMessage({ voice, isOutgoing }: { voice: NonNullable<ChatMessag
   }
 
   return (
-    <div className="mt-1.5 flex items-center gap-3">
-      <audio
-        ref={audioRef}
-        src={voice.url}
-        preload="none"
-        onTimeUpdate={(event) => setElapsed(event.currentTarget.currentTime)}
-        onPlay={() => setPlaying(true)}
-        onPause={() => setPlaying(false)}
-        onEnded={() => {
-          setPlaying(false)
-          setElapsed(0)
-        }}
-        onError={(event) => {
-          // The button is pressed optimistically, so a recording that will not
-          // load otherwise looks exactly like one playing silently — which is
-          // the hardest version of this to notice.
-          setPlaying(false)
-          console.error("[voice] playback failed", event.currentTarget.error)
-        }}
-      />
-      <button
-        onClick={toggle}
-        className="flex w-9 h-9 shrink-0 items-center justify-center rounded-full transition-colors"
-        style={{ background: isOutgoing ? "rgba(255,255,255,0.20)" : "var(--chat-accent)" }}
-        aria-label={playing ? "Pause voice message" : "Play voice message"}
-      >
-        {playing ? (
-          <Pause className="w-4 h-4" style={{ color: "white" }} fill="white" />
-        ) : (
-          <Play className="w-4 h-4 ml-0.5" style={{ color: "white" }} fill="white" />
-        )}
-      </button>
-      {/* No gap: each bar's column carries its own spacing, so the whole
-          track is seekable rather than a row of targets with dead air between
-          them. */}
-      <div className="flex w-[180px] max-w-full shrink-0 items-center h-8 overflow-hidden">
-        {bars.map(({ value, fraction }, i) => {
-          const played = i < progressIndex
-          return (
-            <button
-              key={i}
-              type="button"
-              data-slot="chat-voice-bar"
-              aria-label={`Seek to ${Math.round(fraction * 100)}%`}
-              onClick={() => seek(fraction)}
-              // A bar as tall as its sample is nothing to aim at where the
-              // recording is silent, so the target spans the track's height.
-              // It stays transparent: anything drawn there reads as waveform
-              // and hides the shape the waveform is there to show.
-              className="flex h-full w-[5px] shrink-0 items-center justify-center bg-transparent"
-            >
-              <span
-                aria-hidden
-                className="w-[3px] rounded-full transition-opacity"
-                style={{
-                  height: `${value * 100}%`,
-                  background: isOutgoing ? "white" : "var(--chat-accent)",
-                  opacity: played ? 1 : 0.6 + value * 0.4,
-                  ...(isOutgoing && !played ? { opacity: 0.4 + value * 0.3 } : {}),
-                }}
-              />
-            </button>
-          )
-        })}
+    <div className="mt-1.5">
+      {/* Matches the activity card's title — 13px semibold — so the note a call
+          opens with and the card it closes with read as a pair. In `currentColor`
+          rather than the card's token, because this one sits on a bubble whose
+          text may already be white. */}
+      {voice.title && (
+        <p className="mb-1.5 text-[13px] font-semibold">{voice.title}</p>
+      )}
+      <div className="flex items-center gap-3">
+        <audio
+          ref={audioRef}
+          src={voice.url}
+          preload="none"
+          onTimeUpdate={(event) => setElapsed(event.currentTarget.currentTime)}
+          onPlay={() => setPlaying(true)}
+          onPause={() => setPlaying(false)}
+          onEnded={() => {
+            setPlaying(false)
+            setElapsed(0)
+          }}
+          onError={(event) => {
+            // The button is pressed optimistically, so a recording that will not
+            // load otherwise looks exactly like one playing silently — which is
+            // the hardest version of this to notice.
+            setPlaying(false)
+            console.error("[voice] playback failed", event.currentTarget.error)
+          }}
+        />
+        <button
+          onClick={toggle}
+          className="flex w-9 h-9 shrink-0 items-center justify-center rounded-full transition-colors"
+          style={{ background: isOutgoing ? "rgba(255,255,255,0.20)" : "var(--chat-accent)" }}
+          aria-label={playing ? "Pause voice message" : "Play voice message"}
+        >
+          {playing ? (
+            <Pause className="w-4 h-4" style={{ color: "white" }} fill="white" />
+          ) : (
+            <Play className="w-4 h-4 ml-0.5" style={{ color: "white" }} fill="white" />
+          )}
+        </button>
+        {/* No gap: each bar's column carries its own spacing, so the whole
+            track is seekable rather than a row of targets with dead air between
+            them. */}
+        <div className="flex w-[180px] max-w-full shrink-0 items-center h-8 overflow-hidden">
+          {bars.map(({ value, fraction }, i) => {
+            const played = i < progressIndex
+            return (
+              <button
+                key={i}
+                type="button"
+                data-slot="chat-voice-bar"
+                aria-label={`Seek to ${Math.round(fraction * 100)}%`}
+                onClick={() => seek(fraction)}
+                // A bar as tall as its sample is nothing to aim at where the
+                // recording is silent, so the target spans the track's height.
+                // It stays transparent: anything drawn there reads as waveform
+                // and hides the shape the waveform is there to show.
+                className="flex h-full w-[5px] shrink-0 items-center justify-center bg-transparent"
+              >
+                <span
+                  aria-hidden
+                  className="w-[3px] rounded-full transition-opacity"
+                  style={{
+                    height: `${value * 100}%`,
+                    background: isOutgoing ? "white" : "var(--chat-accent)",
+                    opacity: played ? 1 : 0.6 + value * 0.4,
+                    ...(isOutgoing && !played ? { opacity: 0.4 + value * 0.3 } : {}),
+                  }}
+                />
+              </button>
+            )
+          })}
+        </div>
+        <span className="text-[12px] shrink-0 opacity-60 tabular-nums">{timeLabel}</span>
       </div>
-      <span className="text-[12px] shrink-0 opacity-60 tabular-nums">{timeLabel}</span>
     </div>
   )
 }

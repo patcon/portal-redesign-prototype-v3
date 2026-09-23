@@ -153,6 +153,7 @@ export function toConversationMessages(
           // "still being recorded" and counts up from rather than down.
           duration: meta?.durationSec ?? 0,
           waveform: meta?.waveform ?? [],
+          title: "Voice call started",
         },
       };
       out.push(note);
@@ -169,7 +170,7 @@ export function toConversationMessages(
         senderName: DEMBRANE.name,
         timestamp,
         activity: {
-          title: "Voice call",
+          title: "Voice call ended",
           description: summarize(transcript),
           meta: "Click to read the transcript",
           detail: transcript,

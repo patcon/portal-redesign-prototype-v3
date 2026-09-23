@@ -108,6 +108,11 @@ describe("a call's voice note", () => {
     expect(message.voice).toMatchObject({ duration: 42.5, waveform: [0.1, 0.8] });
   });
 
+  it("says what it is, to pair with the card the call ends on", () => {
+    const [message] = convert([started]) as ChatMessageData[];
+    expect(message.voice?.title).toBe("Voice call started");
+  });
+
   it("is attributed to the conversation, so it sits on the participant's side", () => {
     const [message] = convert([started]) as ChatMessageData[];
     expect(message.senderId).toBe(USER.id);
@@ -121,7 +126,7 @@ describe("a call's voice note", () => {
       parts: [{ type: "text", text: "Voice call transcript:\nwe talked about the harbour" }],
     };
     const [message] = convert([ended]) as ActivityMessageData[];
-    expect(message.activity.title).toBe("Voice call");
+    expect(message.activity.title).toBe("Voice call ended");
     expect(message.activity.detail).toBe("we talked about the harbour");
   });
 });
