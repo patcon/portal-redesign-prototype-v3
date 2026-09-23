@@ -102,10 +102,12 @@ describe("resumeTone", () => {
     expect(resumeTone().byteLength % BYTES_PER_SAMPLE).toBe(0);
   });
 
-  it("is gentle rather than loud", () => {
+  it("carries over the room without being an alert", () => {
     const peak = peakOf(resumeTone());
-    expect(peak).toBeGreaterThan(0);
-    expect(peak).toBeLessThan(0.25);
+    // Loud enough to hear against speech played back at the same level, and
+    // still well under a raised voice.
+    expect(peak).toBeGreaterThan(0.2);
+    expect(peak).toBeLessThan(0.4);
   });
 
   it("starts and ends at silence, so it splices in without a click", () => {

@@ -104,7 +104,7 @@ export function peakOf(pcm: Uint8Array): number {
 const POP_SECONDS = 0.06;
 const POP_GAP_SECONDS = 0.06;
 const TONE_HZ = 587.33; // D5 — high enough to read as a marker over speech.
-const TONE_GAIN = 0.12;
+const TONE_GAIN = 0.28;
 
 let tone: Uint8Array | null = null;
 
