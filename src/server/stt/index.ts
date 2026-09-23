@@ -1,7 +1,7 @@
 import { WorkersAIFluxSTT, WorkersAINova3STT } from "agents/voice";
 import type { Transcriber } from "agents/voice";
 import { LocalWhisperfileSTT } from "./local-whisper-stt";
-import { CallTranscriber } from "./call-transcriber";
+import { CallTranscriber, type CallTranscriberOptions } from "./call-transcriber";
 
 /**
  * Speech-to-text selection, by `STT_PROVIDER` (set in `.dev.vars`):
@@ -32,10 +32,10 @@ function selectProvider(env: Env, provider: string): Transcriber {
   }
 }
 
-export function getTranscriber(env: Env): CallTranscriber {
+export function getTranscriber(env: Env, options?: CallTranscriberOptions): CallTranscriber {
   const provider = String(env.STT_PROVIDER ?? "nova3");
   console.log(`[stt] provider = ${provider}`);
-  return new CallTranscriber(selectProvider(env, provider), provider);
+  return new CallTranscriber(selectProvider(env, provider), provider, options);
 }
 
 /** Which transcriber is in use — shown in the host header next to the model. */

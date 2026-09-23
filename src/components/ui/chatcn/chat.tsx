@@ -305,80 +305,173 @@ interface ChatMessageProps {
 
 // ─── Voice Message ─────────────────────────────────────────────────────────
 
+/**
+ * Diverges from upstream chatcn, and has to be re-applied after a re-pull.
+ *
+ * Upstream's version is a mock: it never touches `voice.url`, and fakes its
+ * progress with a `setInterval` running against `voice.duration`. Dropped into
+ * a real conversation it draws a convincing waveform and plays silence. This
+ * one drives an actual `<audio>` element — same markup, same bars, same
+ * colours, but the clock is the element's rather than a timer's, the bars seek,
+ * and a recording still being made counts up instead of down.
+ *
+ * The bar track is also a fixed width here. Upstream's waveform is a prop of
+ * settled length; ours gains a bar per flushed segment for as long as the call
+ * runs, and a track sized to its contents would drag the whole bubble wider
+ * every few seconds while somebody is still talking.
+ */
+
+/**
+ * How many bars the track holds. Each bar owns a 5px column — 3px of bar and
+ * the gap beside it — so the track is 180px and never any wider.
+ */
+export const VOICE_TRACK_BARS = 36
+
+/**
+ * The bars to draw for a waveform, each with the fraction of the recording it
+ * stands for, so a folded bar still seeks to its own slice rather than to the
+ * sample that happens to share its index.
+ *
+ * Short of the track's capacity the samples are drawn one to a bar, filling
+ * from the left — which is what makes a recording in progress read as growing.
+ * Past it they are folded into that many buckets, each bar taking its bucket's
+ * loudest sample, so the peaks people are looking for survive the fold.
+ */
+function voiceBars(waveform: number[], slots = VOICE_TRACK_BARS) {
+  if (waveform.length <= slots) {
+    return waveform.map((value, i) => ({ value, fraction: (i + 0.5) / waveform.length }))
+  }
+  return Array.from({ length: slots }, (_, k) => {
+    const from = Math.floor((k * waveform.length) / slots)
+    const to = Math.max(from + 1, Math.floor(((k + 1) * waveform.length) / slots))
+    return {
+      value: Math.max(...waveform.slice(from, to)),
+      fraction: (k + 0.5) / slots,
+    }
+  })
+}
+
 function ChatVoiceMessage({ voice, isOutgoing }: { voice: NonNullable<ChatMessageData["voice"]>; isOutgoing: boolean }) {
+  const audioRef = React.useRef<HTMLAudioElement>(null)
   const [playing, setPlaying] = React.useState(false)
-  const [progress, setProgress] = React.useState(0)
-  const progressRef = React.useRef(0)
+  const [elapsed, setElapsed] = React.useState(0)
 
-  React.useEffect(() => {
-    progressRef.current = progress
-  }, [progress])
+  // A recording still being made has no length yet, so there is no fraction of
+  // it to be through and no countdown that would be true. The bars stay
+  // unplayed and the label counts up from zero.
+  const known = Number.isFinite(voice.duration) && voice.duration > 0
+  const progress = known ? Math.min(1, elapsed / voice.duration) : 0
 
-  const totalMins = Math.floor(voice.duration / 60)
-  const totalSecs = Math.floor(voice.duration % 60)
-  const elapsed = progress * voice.duration
-  const elapsedMins = Math.floor(elapsed / 60)
-  const elapsedSecs = Math.floor(elapsed % 60)
-  const timeLabel = playing || progress > 0
-    ? `${elapsedMins}:${elapsedSecs.toString().padStart(2, "0")}`
-    : `${totalMins}:${totalSecs.toString().padStart(2, "0")}`
+  const shown = playing || elapsed > 0 || !known ? elapsed : voice.duration
+  const timeLabel = `${Math.floor(shown / 60)}:${Math.floor(shown % 60).toString().padStart(2, "0")}`
 
-  const progressIndex = Math.floor(progress * voice.waveform.length)
-
-  React.useEffect(() => {
-    if (!playing) return
-    const fps = 20
-    const step = 1 / (voice.duration * fps)
-    const id = setInterval(() => {
-      const next = progressRef.current + step
-      if (next >= 1) {
-        setProgress(0)
-        setPlaying(false)
-        clearInterval(id)
-      } else {
-        setProgress(next)
-      }
-    }, 1000 / fps)
-    return () => clearInterval(id)
-  }, [playing, voice.duration])
+  const bars = voiceBars(voice.waveform)
+  const progressIndex = Math.floor(progress * bars.length)
 
   const toggle = () => {
-    if (!playing && progress === 0) setProgress(0)
-    setPlaying((p) => !p)
+    const audio = audioRef.current
+    if (!audio || voice.locked) return
+    // Flipped here as well as from the element's own events: `play()` is a
+    // promise, and a button that waits for the network before admitting it was
+    // pressed reads as a broken button. The events below keep this honest if
+    // playback stops for a reason nobody clicked.
+    if (playing) {
+      audio.pause()
+      setPlaying(false)
+    } else {
+      void audio.play()
+      setPlaying(true)
+    }
+  }
+
+  const seek = (fraction: number) => {
+    const audio = audioRef.current
+    if (!audio || !known || voice.locked) return
+    audio.currentTime = fraction * voice.duration
+    setElapsed(audio.currentTime)
   }
 
   return (
-    <div className="mt-1.5 flex items-center gap-3">
-      <button
-        onClick={toggle}
-        className="flex w-9 h-9 shrink-0 items-center justify-center rounded-full transition-colors"
-        style={{ background: isOutgoing ? "rgba(255,255,255,0.20)" : "var(--chat-accent)" }}
-        aria-label={playing ? "Pause voice message" : "Play voice message"}
-      >
-        {playing ? (
-          <Pause className="w-4 h-4" style={{ color: "white" }} fill="white" />
-        ) : (
-          <Play className="w-4 h-4 ml-0.5" style={{ color: "white" }} fill="white" />
-        )}
-      </button>
-      <div className="flex flex-1 items-center gap-[2px] h-8">
-        {voice.waveform.map((v, i) => {
-          const played = i < progressIndex
-          return (
-            <div
-              key={i}
-              className="w-[3px] rounded-full transition-opacity"
-              style={{
-                height: `${v * 100}%`,
-                background: isOutgoing ? "white" : "var(--chat-accent)",
-                opacity: played ? 1 : 0.6 + v * 0.4,
-                ...(isOutgoing && !played ? { opacity: 0.4 + v * 0.3 } : {}),
-              }}
-            />
-          )
-        })}
+    <div className="mt-1.5">
+      {/* Matches the activity card's title — 13px semibold — so the note a call
+          opens with and the card it closes with read as a pair. In `currentColor`
+          rather than the card's token, because this one sits on a bubble whose
+          text may already be white. */}
+      {voice.title && (
+        <p className="mb-1.5 text-[13px] font-semibold">{voice.title}</p>
+      )}
+      <div className="flex items-center gap-3">
+        <audio
+          ref={audioRef}
+          src={voice.url}
+          preload="none"
+          onTimeUpdate={(event) => setElapsed(event.currentTarget.currentTime)}
+          onPlay={() => setPlaying(true)}
+          onPause={() => setPlaying(false)}
+          onEnded={() => {
+            setPlaying(false)
+            setElapsed(0)
+          }}
+          onError={(event) => {
+            // The button is pressed optimistically, so a recording that will not
+            // load otherwise looks exactly like one playing silently — which is
+            // the hardest version of this to notice.
+            setPlaying(false)
+            console.error("[voice] playback failed", event.currentTarget.error)
+          }}
+        />
+        {/* Disabled rather than dropped: a note with its controls taken away
+            stops looking like a voice note, and the bars are still what shows
+            a call in progress being heard. */}
+        <button
+          onClick={toggle}
+          disabled={voice.locked}
+          className="flex w-9 h-9 shrink-0 items-center justify-center rounded-full transition-colors disabled:cursor-default disabled:opacity-50"
+          style={{ background: isOutgoing ? "rgba(255,255,255,0.20)" : "var(--chat-accent)" }}
+          aria-label={playing ? "Pause voice message" : "Play voice message"}
+        >
+          {playing ? (
+            <Pause className="w-4 h-4" style={{ color: "white" }} fill="white" />
+          ) : (
+            <Play className="w-4 h-4 ml-0.5" style={{ color: "white" }} fill="white" />
+          )}
+        </button>
+        {/* No gap: each bar's column carries its own spacing, so the whole
+            track is seekable rather than a row of targets with dead air between
+            them. */}
+        <div className="flex w-[180px] max-w-full shrink-0 items-center h-8 overflow-hidden">
+          {bars.map(({ value, fraction }, i) => {
+            const played = i < progressIndex
+            return (
+              <button
+                key={i}
+                type="button"
+                data-slot="chat-voice-bar"
+                aria-label={`Seek to ${Math.round(fraction * 100)}%`}
+                onClick={() => seek(fraction)}
+                disabled={voice.locked}
+                // A bar as tall as its sample is nothing to aim at where the
+                // recording is silent, so the target spans the track's height.
+                // It stays transparent: anything drawn there reads as waveform
+                // and hides the shape the waveform is there to show.
+                className="flex h-full w-[5px] shrink-0 items-center justify-center bg-transparent disabled:cursor-default"
+              >
+                <span
+                  aria-hidden
+                  className="w-[3px] rounded-full transition-opacity"
+                  style={{
+                    height: `${value * 100}%`,
+                    background: isOutgoing ? "white" : "var(--chat-accent)",
+                    opacity: played ? 1 : 0.6 + value * 0.4,
+                    ...(isOutgoing && !played ? { opacity: 0.4 + value * 0.3 } : {}),
+                  }}
+                />
+              </button>
+            )
+          })}
+        </div>
+        <span className="text-[12px] shrink-0 opacity-60 tabular-nums">{timeLabel}</span>
       </div>
-      <span className="text-[12px] shrink-0 opacity-60 tabular-nums">{timeLabel}</span>
     </div>
   )
 }

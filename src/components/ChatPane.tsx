@@ -14,10 +14,12 @@ import {
   DrawerHeader,
   DrawerTitle,
 } from "@/components/ui/shadcn/drawer";
-import { MAX_TEXT } from "../shared";
+import { MAX_TEXT, pauseMarker } from "../shared";
+import { withPauseMarkers, type LivePause } from "./liveTranscript";
 import type { ConversationState } from "../types";
 import { useCall } from "../hooks/useCall";
-import { createTimestampBook, toConversationMessages } from "./adapt";
+import { useRecordingHref, useRecordings } from "../hooks/useRecordings";
+import { createTimestampBook, recordingIdsOf, toConversationMessages } from "./adapt";
 
 /**
  * One conversation's messages, composer and call. Used by both the host console and
@@ -106,9 +108,23 @@ export function ChatPane({
   // Held as lazily-initialised state rather than a ref, so it is never read
   // during render before an effect has filled it in.
   const [timestampOf] = useState(createTimestampBook);
+
+  // A call's voice note is written before it has any audio, so how long it is
+  // and how loud it has been come from the recording itself — re-read while the
+  // call is still running, so the bars grow as people speak.
+  const recordingIds = useMemo(() => recordingIdsOf(messages), [messages]);
+  const recordings = useRecordings(eventId, chatId, recordingIds);
+  const recordingHref = useRecordingHref(eventId, chatId);
+  // `call.inCall` is true only on the device holding the voice socket, so the
+  // host — reading the same thread, wanting to listen in — is never locked out.
   const thread = useMemo(
-    () => toConversationMessages(messages, currentUser, timestampOf),
-    [messages, currentUser, timestampOf],
+    () =>
+      toConversationMessages(messages, currentUser, timestampOf, {
+        recordingHref,
+        recordings,
+        recordingHere: call.inCall,
+      }),
+    [messages, currentUser, timestampOf, recordingHref, recordings, call.inCall],
   );
 
   const send = useCallback(
@@ -141,10 +157,46 @@ export function ChatPane({
   }, [call.inCall]);
   /* oxlint-enable react/set-state-in-effect */
 
+  // Pauses in the call so far, each pinned to how much had been heard when the
+  // microphone went quiet. The thread's copy of this transcript is marked up on
+  // the server, from the gap in the audio; this one never goes through there, so
+  // the same marks are made here, off the mute button that caused the gap.
+  const [pauses, setPauses] = useState<LivePause[]>([]);
+  const mutedAt = useRef<{ since: number; at: number } | null>(null);
+  /* oxlint-disable react/set-state-in-effect */
+  useEffect(() => {
+    if (call.muted) {
+      mutedAt.current = { since: Date.now(), at: call.heard.length };
+      return;
+    }
+    const paused = mutedAt.current;
+    mutedAt.current = null;
+    if (!paused) return;
+    setPauses((marks) => [
+      ...marks,
+      { at: paused.at, marker: pauseMarker(Date.now() - paused.since) },
+    ]);
+    // On `call.muted` alone, deliberately: `call.heard` is read at the moment
+    // the microphone goes quiet, and re-running this on every word would keep
+    // moving the mark to the end of what has been said since.
+    // oxlint-disable-next-line react-hooks/exhaustive-deps
+  }, [call.muted]);
+
+  // A new call is a new transcript: nothing from the last one belongs in it.
+  useEffect(() => {
+    if (!call.inCall) {
+      mutedAt.current = null;
+      setPauses([]);
+    }
+  }, [call.inCall]);
+  /* oxlint-enable react/set-state-in-effect */
+
   // The call as it is being spoken: what has been transcribed, plus the phrase still
   // in flight. `CallScreen` takes one block of prose — the transcription is not
   // diarized, so there are no turns to break it into.
-  const transcript = [call.heard, call.interim].filter(Boolean).join(" ");
+  const transcript = [withPauseMarkers(call.heard, pauses), call.interim]
+    .filter(Boolean)
+    .join(" ");
 
   // The activity whose panel is open, or `null`. A call's card carries a trimmed line
   // of its transcript; the whole thing is behind the click, in the drawer below.

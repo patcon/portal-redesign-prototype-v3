@@ -14,6 +14,7 @@ export {
   ChatReplyPreview,
   ChatReadReceipts,
   ChatVoiceMessage,
+  VOICE_TRACK_BARS,
   ChatFilePreview,
   // Not upstream's exports — added so our own message- and list-shaped components can
   // reuse chatcn's bubble radii and chat context instead of duplicating them.

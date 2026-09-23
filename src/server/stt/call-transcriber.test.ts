@@ -130,3 +130,62 @@ describe("CallTranscriber trailing interim", () => {
     expect(heard).toEqual(["This is a test."]);
   });
 });
+
+describe("CallTranscriber audio tap", () => {
+  it("hands every fed chunk to the recorder as well as the provider", () => {
+    const fake = fakeProvider();
+    const heard: ArrayBuffer[] = [];
+    const tracker = new CallTranscriber(fake.provider, "test", {
+      onAudio: (chunk) => heard.push(chunk),
+    });
+    const session = startCall(tracker, "conn-1");
+
+    const first = new ArrayBuffer(8);
+    const second = new ArrayBuffer(16);
+    session.feed(first);
+    session.feed(second);
+
+    expect(heard).toEqual([first, second]);
+    expect(fake.session.feed).toHaveBeenCalledTimes(2);
+  });
+
+  it("tags the audio with the session it belongs to", () => {
+    const fake = fakeProvider();
+    const sessions: string[] = [];
+    const tracker = new CallTranscriber(fake.provider, "test", {
+      onAudio: (_chunk, sessionId) => sessions.push(sessionId),
+    });
+    const session = tracker.createSession({});
+    const claimed = tracker.claim("conn-1");
+
+    session.feed(new ArrayBuffer(8));
+
+    // The mixin creates the session before it knows the connection, so the
+    // session id is what ties the audio to the call that `claim` names.
+    expect(claimed).not.toBeNull();
+    expect(sessions).toEqual([claimed]);
+  });
+
+  it("returns null from claim when no session is waiting to be named", () => {
+    const fake = fakeProvider();
+    const tracker = new CallTranscriber(fake.provider, "test");
+    expect(tracker.claim("conn-1")).toBeNull();
+  });
+
+  it("keeps transcribing when the recorder throws", () => {
+    const fake = fakeProvider();
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    const tracker = new CallTranscriber(fake.provider, "test", {
+      onAudio: () => {
+        throw new Error("SQLite is unhappy");
+      },
+    });
+    const session = startCall(tracker, "conn-1");
+
+    const chunk = new ArrayBuffer(8);
+    // Losing the recording is bad; losing the call because of it is worse.
+    expect(() => session.feed(chunk)).not.toThrow();
+    expect(fake.session.feed).toHaveBeenCalledWith(chunk);
+    error.mockRestore();
+  });
+});

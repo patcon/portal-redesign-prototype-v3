@@ -195,6 +195,27 @@ export class ProjectHub extends DurableObject<Env> {
     );
   }
 
+  /**
+   * A recording's metadata and where its audio lives, for the playback route.
+   *
+   * The route cannot address a conversation's Durable Object directly — its
+   * physical name belongs to the catalog, not to the `chatId` in the URL — so
+   * reaching one always goes through the hub. Going through it also means a
+   * recording can only be asked for under the event that owns the chat.
+   */
+  async recordingManifest(chatId: string, recordingId: string) {
+    const chat = await this.chats.get(assertChatId(chatId));
+    if (!chat) return null;
+    try {
+      return await chat.recordingManifest(recordingId);
+    } finally {
+      // Disposed rather than left to the collector: this is reached once a
+      // second per listener while a call is being followed, and an undisposed
+      // stub per poll is both a leak and a runtime warning.
+      (chat as Partial<Disposable>)[Symbol.dispose]?.();
+    }
+  }
+
   /** Destroys the chat's own storage and removes it from the catalog. */
   async deleteChat(chatId: string): Promise<boolean> {
     const deleted = await this.chats.delete(chatId);
