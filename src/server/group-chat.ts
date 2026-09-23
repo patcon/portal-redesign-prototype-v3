@@ -9,7 +9,7 @@ import { Recorder } from "./recording";
 import { ONBOARDING_INSTRUCTIONS, WELCOME_MESSAGE } from "./prompts/onboarding";
 import { HOST_INSTRUCTIONS, HOST_WELCOME_MESSAGE } from "./prompts/host";
 import { isCallMarker } from "../shared";
-import type { ChatMeta, ChatOwner, ConversationState, RecordingMeta } from "../types";
+import type { ChatMeta, ChatOwner, ConversationState } from "../types";
 
 /** How much of a call's transcript the hub keeps for cross-conversation reads. */
 const TRANSCRIPT_EXCERPT = 600;
@@ -221,17 +221,16 @@ export class GroupChat extends ChatAgent<Env, ConversationState> {
     this.#chatId = owner?.chatId ?? connection.id;
 
     // The mixin calls this hook again when a call survives an eviction, so
-    // everything below has to be safe to run twice. `open` returning the
-    // session's existing recording is the guard: a second one would split one
-    // call into two voice notes, and the transcript would point at the wrong
-    // half. (The utterances in `#calls` are not so lucky — they are reset just
+    // everything here has to be safe to run twice. The recorder matches on the
+    // connection rather than the session — the WebSocket survives an eviction
+    // and the transcriber session does not — so a resumed call carries on
+    // filling the same recording, and `fresh` tells us not to announce it
+    // again. (The utterances in `#calls` are not so lucky: they are reset just
     // above, which is a pre-existing hole in what a resumed call remembers.)
-    const before = this.#recorder.forSession(sessionId);
-    const recordingId = this.#recorder.open(sessionId, connection.id, this.#chatId);
-    if (before) return;
-
+    const { recordingId, fresh } = this.#recorder.open(sessionId, connection.id, this.#chatId);
     this.#recording.set(connection.id, recordingId);
     await this.schedule(STALLED_FLUSH_SECONDS, "flushStalledRecordings");
+    if (!fresh) return;
 
     // The voice note goes in as the call opens, not when it ends: it is what
     // makes a call in progress visible in the thread, and it fills in — length
@@ -272,20 +271,6 @@ export class GroupChat extends ChatAgent<Env, ConversationState> {
     if (open.length === 0) return;
     for (const recordingId of open) await this.#recorder.flush(recordingId);
     await this.schedule(STALLED_FLUSH_SECONDS, "flushStalledRecordings");
-  }
-
-  /** The recording behind a call, for the browser's voice note. */
-  @callable()
-  describeRecording(recordingId: string): RecordingMeta | null {
-    const summary = this.#recorder.describe(recordingId);
-    if (!summary) return null;
-    // Segment keys stay here. The route reads them from the same object, and
-    // nothing the browser does needs to know where the bytes live.
-    return {
-      ended: summary.ended,
-      durationSec: summary.durationSec,
-      waveform: summary.waveform,
-    };
   }
 
   /** Metadata and segment keys, for the playback route. */

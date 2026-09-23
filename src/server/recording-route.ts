@@ -63,8 +63,14 @@ export async function handleRecording(
   const hub = env.ProjectHub.getByName(ref.eventId);
   const source: RecordingSource = {
     describe: async () => {
-      const manifest = await hub.recordingManifest(ref.chatId, ref.recordingId);
-      return manifest ?? null;
+      try {
+        return (await hub.recordingManifest(ref.chatId, ref.recordingId)) ?? null;
+      } catch {
+        // The hub validates the chat id and throws on a malformed one. From
+        // out here that is a URL naming a recording that does not exist, which
+        // is a 404 and not a server error.
+        return null;
+      }
     },
     body: async (key) => (await env.RECORDINGS.get(key))?.body ?? null,
   };

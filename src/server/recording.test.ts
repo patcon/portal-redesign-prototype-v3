@@ -90,7 +90,7 @@ describe("Recorder", () => {
 
   describe("opening and attaching", () => {
     it("gives a session one recording, and finds it again by session", () => {
-      const id = recorder.open("session-a", "conn-1", CHAT);
+      const { recordingId: id } = recorder.open("session-a", "conn-1", CHAT);
       expect(recorder.forSession("session-a")).toBe(id);
       expect(recorder.forSession("session-b")).toBeNull();
     });
@@ -98,25 +98,65 @@ describe("Recorder", () => {
     it("returns the same recording when a resumed call opens again", () => {
       const first = recorder.open("session-a", "conn-1", CHAT);
       const second = recorder.open("session-a", "conn-1", CHAT);
-      expect(second).toBe(first);
+      expect(second.recordingId).toBe(first.recordingId);
     });
 
     it("finds a session's recording after an eviction, without opening a second", () => {
-      const id = recorder.open("session-a", "conn-1", CHAT);
+      const { recordingId } = recorder.open("session-a", "conn-1", CHAT);
       // The in-memory memo is gone; only SQLite survives.
-      expect(reopen().forSession("session-a")).toBe(id);
+      expect(reopen().forSession("session-a")).toBe(recordingId);
+    });
+
+    it("says whether the recording is new, so a resumed call posts no second note", () => {
+      expect(recorder.open("session-a", "conn-1", CHAT).fresh).toBe(true);
+      expect(recorder.open("session-a", "conn-1", CHAT).fresh).toBe(false);
+    });
+
+    it("keeps one recording when a call resumes under a new transcriber session", () => {
+      const first = recorder.open("session-a", "conn-1", CHAT);
+
+      // An evicted call wakes with the same WebSocket but a freshly created
+      // transcriber session, so the session id is not what identifies the call.
+      const resumed = reopen().open("session-b", "conn-1", CHAT);
+
+      expect(resumed).toEqual({ recordingId: first.recordingId, fresh: false });
+    });
+
+    it("routes audio from the resumed session into the same recording", () => {
+      const { recordingId } = recorder.open("session-a", "conn-1", CHAT);
+      const woken = reopen();
+      woken.open("session-b", "conn-1", CHAT);
+
+      expect(woken.forSession("session-b")).toBe(recordingId);
+    });
+
+    it("gives a genuinely different call its own recording", () => {
+      const first = recorder.open("session-a", "conn-1", CHAT);
+      const second = recorder.open("session-b", "conn-2", CHAT);
+
+      expect(second.recordingId).not.toBe(first.recordingId);
+      expect(second.fresh).toBe(true);
+    });
+
+    it("does not adopt a finished call's recording when the same device calls again", async () => {
+      const first = recorder.open("session-a", "conn-1", CHAT);
+      await recorder.end(first.recordingId);
+
+      const second = recorder.open("session-b", "conn-1", CHAT);
+      expect(second.fresh).toBe(true);
+      expect(second.recordingId).not.toBe(first.recordingId);
     });
   });
 
   describe("append", () => {
     it("asks for a flush only once the segment threshold is crossed", () => {
-      const id = recorder.open("session-a", "conn-1", CHAT);
+      const { recordingId: id } = recorder.open("session-a", "conn-1", CHAT);
       expect(recorder.append(id, pcm(SEGMENT_BYTES / 2))).toBe(false);
       expect(recorder.append(id, pcm(SEGMENT_BYTES / 2))).toBe(true);
     });
 
     it("rebuilds its byte count from SQLite after an eviction", () => {
-      const id = recorder.open("session-a", "conn-1", CHAT);
+      const { recordingId: id } = recorder.open("session-a", "conn-1", CHAT);
       recorder.append(id, pcm(SEGMENT_BYTES / 2));
       // A woken object must not think the buffer is empty and under-flush.
       expect(reopen().append(id, pcm(SEGMENT_BYTES / 2))).toBe(true);
@@ -129,7 +169,7 @@ describe("Recorder", () => {
 
   describe("flush", () => {
     it("writes one R2 object and clears the staged rows", async () => {
-      const id = recorder.open("session-a", "conn-1", CHAT);
+      const { recordingId: id } = recorder.open("session-a", "conn-1", CHAT);
       recorder.append(id, pcm(SEGMENT_BYTES));
       await recorder.flush(id);
 
@@ -139,13 +179,13 @@ describe("Recorder", () => {
     });
 
     it("does nothing when there is nothing staged", async () => {
-      const id = recorder.open("session-a", "conn-1", CHAT);
+      const { recordingId: id } = recorder.open("session-a", "conn-1", CHAT);
       await recorder.flush(id);
       expect(r2.objects.size).toBe(0);
     });
 
     it("keeps the staged audio when the upload fails", async () => {
-      const id = recorder.open("session-a", "conn-1", CHAT);
+      const { recordingId: id } = recorder.open("session-a", "conn-1", CHAT);
       recorder.append(id, pcm(SEGMENT_BYTES));
       r2.failNextPut();
       await recorder.flush(id);
@@ -156,7 +196,7 @@ describe("Recorder", () => {
     });
 
     it("retries a failed upload into the same sequence, not the next one", async () => {
-      const id = recorder.open("session-a", "conn-1", CHAT);
+      const { recordingId: id } = recorder.open("session-a", "conn-1", CHAT);
       recorder.append(id, pcm(SEGMENT_BYTES));
       r2.failNextPut();
       await recorder.flush(id);
@@ -167,7 +207,7 @@ describe("Recorder", () => {
     });
 
     it("numbers segments in order and records where each one starts", async () => {
-      const id = recorder.open("session-a", "conn-1", CHAT);
+      const { recordingId: id } = recorder.open("session-a", "conn-1", CHAT);
       recorder.append(id, pcm(SEGMENT_BYTES));
       await recorder.flush(id);
       recorder.append(id, pcm(SEGMENT_BYTES));
@@ -193,7 +233,7 @@ describe("Recorder", () => {
     });
 
     it("joins the staged chunks back into one object, in order", async () => {
-      const id = recorder.open("session-a", "conn-1", CHAT);
+      const { recordingId: id } = recorder.open("session-a", "conn-1", CHAT);
       recorder.append(id, new Int16Array([1, 2]).buffer);
       recorder.append(id, new Int16Array([3, 4]).buffer);
       await recorder.flush(id);
@@ -203,7 +243,7 @@ describe("Recorder", () => {
     });
 
     it("runs overlapping flushes one at a time", async () => {
-      const id = recorder.open("session-a", "conn-1", CHAT);
+      const { recordingId: id } = recorder.open("session-a", "conn-1", CHAT);
       recorder.append(id, pcm(SEGMENT_BYTES));
       // Both calls see staged rows; only the first may turn them into a segment.
       await Promise.all([recorder.flush(id), recorder.flush(id)]);
@@ -217,7 +257,7 @@ describe("Recorder", () => {
     });
 
     it("reports a recording in progress as unended, with a bar per segment", async () => {
-      const id = recorder.open("session-a", "conn-1", CHAT);
+      const { recordingId: id } = recorder.open("session-a", "conn-1", CHAT);
       recorder.append(id, pcm(SEGMENT_BYTES, 32767));
       await recorder.flush(id);
 
@@ -230,7 +270,7 @@ describe("Recorder", () => {
     });
 
     it("keeps a quiet segment's bar below a loud one's", async () => {
-      const id = recorder.open("session-a", "conn-1", CHAT);
+      const { recordingId: id } = recorder.open("session-a", "conn-1", CHAT);
       recorder.append(id, pcm(SEGMENT_BYTES, 32767));
       await recorder.flush(id);
       recorder.append(id, pcm(SEGMENT_BYTES, 1000));
@@ -243,7 +283,7 @@ describe("Recorder", () => {
 
   describe("end", () => {
     it("flushes what is left and marks the recording finished", async () => {
-      const id = recorder.open("session-a", "conn-1", CHAT);
+      const { recordingId: id } = recorder.open("session-a", "conn-1", CHAT);
       recorder.append(id, pcm(1600));
       const summary = await recorder.end(id);
 
@@ -254,20 +294,20 @@ describe("Recorder", () => {
     });
 
     it("leaves no open recording behind for the session", async () => {
-      const id = recorder.open("session-a", "conn-1", CHAT);
+      const { recordingId: id } = recorder.open("session-a", "conn-1", CHAT);
       await recorder.end(id);
       expect(recorder.openRecordings()).toEqual([]);
     });
 
     it("lists a recording as open until it ends, so a stalled call can be flushed", () => {
-      const id = recorder.open("session-a", "conn-1", CHAT);
+      const { recordingId: id } = recorder.open("session-a", "conn-1", CHAT);
       expect(recorder.openRecordings()).toEqual([id]);
     });
   });
 
   it("never throws out of the audio path when R2 is down", async () => {
     const warn = vi.spyOn(console, "error").mockImplementation(() => {});
-    const id = recorder.open("session-a", "conn-1", CHAT);
+    const { recordingId: id } = recorder.open("session-a", "conn-1", CHAT);
     recorder.append(id, pcm(SEGMENT_BYTES));
     r2.failNextPut(5);
     await expect(recorder.flush(id)).resolves.toBeUndefined();

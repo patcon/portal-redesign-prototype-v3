@@ -198,14 +198,37 @@ export class Recorder {
   }
 
   /**
-   * Start recording this session, or return the recording it already has.
+   * Start recording this call, or adopt the recording it already has.
    *
-   * Idempotent because the voice mixin calls `onCallStart` again when a call
-   * survives an eviction; a second recording there would split one call in two.
+   * `fresh` is false when this call was already being recorded, which is the
+   * caller's cue not to announce it a second time.
+   *
+   * The call is identified by its **connection**, not by its transcriber
+   * session. The voice mixin calls `onCallStart` again when a call survives an
+   * eviction, and the session it creates on the way back is a new one — so
+   * matching on the session would open a second recording and split one call
+   * into two voice notes, with the transcript pointing at the wrong half. The
+   * WebSocket survives the eviction; the session does not.
    */
-  open(sessionId: string, connectionId: string, chatId: string): string {
-    const existing = this.forSession(sessionId);
-    if (existing) return existing;
+  open(
+    sessionId: string,
+    connectionId: string,
+    chatId: string,
+  ): { recordingId: string; fresh: boolean } {
+    const [open] = this.#sql
+      .exec(
+        "SELECT id FROM rec_recordings WHERE connection_id = ? AND ended_at IS NULL ORDER BY started_at DESC LIMIT 1",
+        connectionId,
+      )
+      .toArray() as { id: string }[];
+
+    if (open) {
+      // Point the new session at the recording already in progress, so the
+      // audio arriving under it lands in the same place as before the eviction.
+      this.#sql.exec("UPDATE rec_recordings SET session_id = ? WHERE id = ?", sessionId, open.id);
+      this.#bySession.set(sessionId, open.id);
+      return { recordingId: open.id, fresh: false };
+    }
 
     const id = crypto.randomUUID();
     this.#sql.exec(
@@ -218,7 +241,7 @@ export class Recorder {
     );
     this.#bySession.set(sessionId, id);
     this.#buffered.set(id, 0);
-    return id;
+    return { recordingId: id, fresh: true };
   }
 
   /**
