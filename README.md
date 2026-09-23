@@ -35,6 +35,14 @@ Every route hangs off an event id.
 | `/events/{eventId}`                | a device | What the QR code points at; spawns a conversation and redirects |
 | `/events/{eventId}/group/{chatId}` | a device | One conversation's own thread                                   |
 
+Two more are the Worker's rather than the app's, and are listed in
+`run_worker_first` so the SPA does not swallow them:
+
+| Route                                               | What                                             |
+| --------------------------------------------------- | ------------------------------------------------ |
+| `/recordings/{eventId}/{chatId}/{recordingId}.wav`  | A call's audio, assembled from R2 on the way out |
+| `/recordings/{eventId}/{chatId}/{recordingId}.json` | Its length and waveform, for the voice note      |
+
 Access is decided by the route alone — there is no authentication. Anyone with
 an event id can reach its host console. That is deliberate for a prototype and
 must change before this is deployed anywhere real.
@@ -67,6 +75,50 @@ Object read instead of N.
 
 The host's private thread is a `GroupChat` like any other, distinguished only
 by `kind: "host"`. One chat implementation, not two.
+
+### Recorded call audio
+
+`agents/voice` sends raw headerless PCM — 16 kHz mono 16-bit, about 32 KB/s —
+so a recording is just bytes in order, with no container or codec anywhere.
+That is what makes the rest of this small.
+
+```
+browser ──PCM frames──▶ CallTranscriber.feed ──▶ provider (transcript)
+                                │
+                                ▼
+                        rec_pending (SQLite, ~2s)
+                                │ flush
+                                ▼
+              R2  recordings/{chatId}/{recordingId}/00000.pcm
+                                │
+   GET …/{recordingId}.wav ─────┴─▶ RIFF header + segments, streamed R2 → client
+```
+
+The audio is tapped in `CallTranscriber`, which already wrapped every frame on
+its way to the speech-to-text provider — `withVoiceInput` offers no hook for raw
+audio, and this needs no fork of the SDK. Frames are staged in the
+conversation's own SQLite and written to R2 a couple of seconds at a time, so an
+eviction mid-call loses only the unflushed tail. A recording is identified by
+the call's **connection**, not its transcriber session: the WebSocket survives an
+eviction and the session does not.
+
+Nothing is stored in WAV form. The 44-byte header is made per request, which is
+what lets the same route serve a call still in progress — it declares an unknown
+length and keeps reading until the recording ends. The cost is that a live
+recording cannot be seeked and reports no duration; once it ends the route
+serves a real length, `Accept-Ranges`, and the client asks for a fresh url so the
+player picks the seekable version up.
+
+A call therefore leaves two messages in the thread: a voice note when it opens,
+and the transcript card when it ends. The voice note is chatcn's own `voice`
+message shape, so it needed no new render branch — but chatcn's player was a
+mock that ignored `voice.url` and faked its progress with a timer, and now
+drives a real `<audio>`. See the note above `ChatVoiceMessage`.
+
+Retention is bucket configuration rather than Worker configuration, so it cannot
+live in `wrangler.jsonc`: `scripts/provision-r2.sh` creates the bucket and its
+90-day lifecycle rule. Local development needs none of it — `vite dev` simulates
+the binding.
 
 ## Layout
 
@@ -179,10 +231,17 @@ document and were not re-measured here.
 ## Known issues
 
 - **A call's transcript may not reach the thread.** Interim text appears while
-  recording, but no message is written when the call ends. `onTranscript` only
-  fires on a _finalized_ transcript, and `onCallEnd` returns silently when none
-  arrived — which is also what happens when the Nova 3 socket dies mid-call
-  under `vite dev`. Undiagnosed; `whisper-local` is the workaround to try.
+  recording, but the message written when the call ends can be empty.
+  `onTranscript` only fires on a _finalized_ transcript, and none arrives when
+  the Nova 3 socket dies mid-call under `vite dev`. Undiagnosed; `whisper-local`
+  is the workaround to try. The audio is no longer lost with it — a call the
+  provider could not hear still writes its message, and the voice note plays.
+- **A resumed call forgets what it already heard.** `onCallStart` runs again
+  after an eviction mid-call and resets that connection's utterances, so the
+  transcript keeps only what was said after the object woke. The recording does
+  not have this gap.
+- **Listening to a call in progress starts from its beginning.** An unknown-length
+  stream cannot be seeked, so there is no way to jump to the live edge.
 - **No authentication.** See Routes above.
 
 ## Background
