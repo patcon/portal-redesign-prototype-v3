@@ -96,6 +96,22 @@ describe("ChatVoiceMessage", () => {
     expect(bars).toHaveLength(VOICE_TRACK_BARS);
   });
 
+  it("leaves a full-height target where the recording is silent", () => {
+    const { container } = renderVoice({
+      ...VOICE,
+      voice: { ...VOICE.voice!, waveform: [0, 0, 0] },
+    });
+
+    // A bar as tall as its sample is nothing to aim at when the sample is
+    // silence, so every bar sits on a faint full-height one that takes the
+    // click on its behalf.
+    const rails = container.querySelectorAll("[data-slot='chat-voice-rail']");
+    expect(rails).toHaveLength(3);
+    for (const bar of container.querySelectorAll("[data-slot='chat-voice-bar']")) {
+      expect(bar.className).toContain("h-full");
+    }
+  });
+
   it("keeps folded bars seeking across the whole recording", () => {
     const long = Array.from({ length: 500 }, () => 0.5);
     renderVoice({ ...VOICE, voice: { ...VOICE.voice!, waveform: long } });

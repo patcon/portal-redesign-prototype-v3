@@ -434,14 +434,31 @@ function ChatVoiceMessage({ voice, isOutgoing }: { voice: NonNullable<ChatMessag
               data-slot="chat-voice-bar"
               aria-label={`Seek to ${Math.round(fraction * 100)}%`}
               onClick={() => seek(fraction)}
-              className="w-[3px] shrink-0 rounded-full transition-opacity"
-              style={{
-                height: `${value * 100}%`,
-                background: isOutgoing ? "white" : "var(--chat-accent)",
-                opacity: played ? 1 : 0.6 + value * 0.4,
-                ...(isOutgoing && !played ? { opacity: 0.4 + value * 0.3 } : {}),
-              }}
-            />
+              className="relative flex h-full w-[3px] shrink-0 items-center justify-center"
+            >
+              {/* A bar as tall as its sample is nothing to aim at where the
+                  recording is silent, so each one sits on a faint rail that
+                  spans the track's full height and takes the click for it. */}
+              <span
+                aria-hidden
+                data-slot="chat-voice-rail"
+                className="absolute inset-y-0 w-full rounded-full"
+                style={{
+                  background: isOutgoing ? "white" : "var(--chat-accent)",
+                  opacity: isOutgoing ? 0.18 : 0.15,
+                }}
+              />
+              <span
+                aria-hidden
+                className="relative w-full rounded-full transition-opacity"
+                style={{
+                  height: `${value * 100}%`,
+                  background: isOutgoing ? "white" : "var(--chat-accent)",
+                  opacity: played ? 1 : 0.6 + value * 0.4,
+                  ...(isOutgoing && !played ? { opacity: 0.4 + value * 0.3 } : {}),
+                }}
+              />
+            </button>
           )
         })}
       </div>
