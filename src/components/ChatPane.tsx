@@ -14,7 +14,8 @@ import {
   DrawerHeader,
   DrawerTitle,
 } from "@/components/ui/shadcn/drawer";
-import { MAX_TEXT } from "../shared";
+import { MAX_TEXT, pauseMarker } from "../shared";
+import { withPauseMarkers, type LivePause } from "./liveTranscript";
 import type { ConversationState } from "../types";
 import { useCall } from "../hooks/useCall";
 import { useRecordingHref, useRecordings } from "../hooks/useRecordings";
@@ -156,10 +157,46 @@ export function ChatPane({
   }, [call.inCall]);
   /* oxlint-enable react/set-state-in-effect */
 
+  // Pauses in the call so far, each pinned to how much had been heard when the
+  // microphone went quiet. The thread's copy of this transcript is marked up on
+  // the server, from the gap in the audio; this one never goes through there, so
+  // the same marks are made here, off the mute button that caused the gap.
+  const [pauses, setPauses] = useState<LivePause[]>([]);
+  const mutedAt = useRef<{ since: number; at: number } | null>(null);
+  /* oxlint-disable react/set-state-in-effect */
+  useEffect(() => {
+    if (call.muted) {
+      mutedAt.current = { since: Date.now(), at: call.heard.length };
+      return;
+    }
+    const paused = mutedAt.current;
+    mutedAt.current = null;
+    if (!paused) return;
+    setPauses((marks) => [
+      ...marks,
+      { at: paused.at, marker: pauseMarker(Date.now() - paused.since) },
+    ]);
+    // On `call.muted` alone, deliberately: `call.heard` is read at the moment
+    // the microphone goes quiet, and re-running this on every word would keep
+    // moving the mark to the end of what has been said since.
+    // oxlint-disable-next-line react-hooks/exhaustive-deps
+  }, [call.muted]);
+
+  // A new call is a new transcript: nothing from the last one belongs in it.
+  useEffect(() => {
+    if (!call.inCall) {
+      mutedAt.current = null;
+      setPauses([]);
+    }
+  }, [call.inCall]);
+  /* oxlint-enable react/set-state-in-effect */
+
   // The call as it is being spoken: what has been transcribed, plus the phrase still
   // in flight. `CallScreen` takes one block of prose — the transcription is not
   // diarized, so there are no turns to break it into.
-  const transcript = [call.heard, call.interim].filter(Boolean).join(" ");
+  const transcript = [withPauseMarkers(call.heard, pauses), call.interim]
+    .filter(Boolean)
+    .join(" ");
 
   // The activity whose panel is open, or `null`. A call's card carries a trimmed line
   // of its transcript; the whole thing is behind the click, in the drawer below.
