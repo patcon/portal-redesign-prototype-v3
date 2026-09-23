@@ -1,6 +1,6 @@
 /** @vitest-environment jsdom */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { ChatUser } from "@/components/ui/chatcn/types";
 
 // The two text sockets. Neither is what these tests are about, and both would
@@ -48,6 +48,25 @@ vi.mock("agents/voice/client", () => ({ VoiceClient: FakeVoiceClient }));
 // regardless — stated here so the order reads as deliberate.
 const { ChatPane } = await import("./ChatPane");
 
+/**
+ * The recording metadata route, answered in-process.
+ *
+ * A voice note's length and bars come from the server rather than from the
+ * message, so without this the thread renders a player pointing at nothing.
+ */
+const recordingMeta: Record<string, unknown> = {};
+const fetchCalls: string[] = [];
+vi.stubGlobal(
+  "fetch",
+  vi.fn<(input: string) => Promise<Response>>(async (input: string) => {
+    fetchCalls.push(input);
+    const id = /\/([^/]+)\.json$/.exec(input)?.[1] ?? "";
+    const meta = recordingMeta[id];
+    if (!meta) return new Response(null, { status: 404 });
+    return Response.json(meta);
+  }),
+);
+
 const USER: ChatUser = { id: "host", name: "Host" };
 
 function renderPane(props: Partial<Parameters<typeof ChatPane>[0]> = {}) {
@@ -66,6 +85,8 @@ describe("ChatPane", () => {
   beforeEach(() => {
     built.length = 0;
     threadMessages.length = 0;
+    fetchCalls.length = 0;
+    for (const key of Object.keys(recordingMeta)) delete recordingMeta[key];
   });
   afterEach(cleanup);
 
@@ -140,5 +161,79 @@ describe("ChatPane", () => {
     renderPane({ callable: false, actions });
 
     expect(actions).toHaveBeenCalledWith(expect.objectContaining({ callable: false }));
+  });
+
+  describe("a call's recording", () => {
+    /** The `<audio>` a voice note drives; it has no role to query by. */
+    function voiceNote(container: HTMLElement): HTMLAudioElement | null {
+      return container.querySelector("audio");
+    }
+
+    beforeEach(() => {
+      threadMessages.push({
+        id: "call-start-1",
+        role: "user",
+        metadata: { kind: "call-started", recordingId: "rec-1" },
+        parts: [{ type: "text", text: "Voice call started" }],
+      });
+    });
+
+    it("plays from the route that assembles the recording", async () => {
+      const { container } = renderPane();
+      await waitFor(() => expect(voiceNote(container)).not.toBeNull());
+
+      expect(voiceNote(container)?.getAttribute("src")).toBe(
+        "/recordings/event-1/chat-1/rec-1.wav",
+      );
+    });
+
+    it("draws the bars the recording reports", async () => {
+      recordingMeta["rec-1"] = { ended: true, durationSec: 12, waveform: [0.2, 0.6, 0.9] };
+      const { container } = renderPane();
+
+      await waitFor(() =>
+        expect(container.querySelectorAll("[data-slot='chat-voice-bar']")).toHaveLength(3),
+      );
+    });
+
+    it("keeps re-reading a call that has not ended, so its bars grow", async () => {
+      recordingMeta["rec-1"] = { ended: false, durationSec: 2, waveform: [0.2] };
+      const { container } = renderPane();
+      await waitFor(() =>
+        expect(container.querySelectorAll("[data-slot='chat-voice-bar']")).toHaveLength(1),
+      );
+
+      recordingMeta["rec-1"] = { ended: false, durationSec: 4, waveform: [0.2, 0.7] };
+      await waitFor(
+        () => expect(container.querySelectorAll("[data-slot='chat-voice-bar']")).toHaveLength(2),
+        { timeout: 5000 },
+      );
+    });
+
+    it("stops re-reading once the call has ended", async () => {
+      recordingMeta["rec-1"] = { ended: true, durationSec: 12, waveform: [0.2] };
+      renderPane();
+      await waitFor(() => expect(fetchCalls.length).toBeGreaterThan(0));
+
+      const settled = fetchCalls.length;
+      await new Promise((done) => setTimeout(done, 200));
+      expect(fetchCalls.length).toBe(settled);
+    });
+
+    it("still opens the transcript when the call's card is clicked", async () => {
+      // Long enough that the card trims it, so the drawer's copy is the only
+      // place the whole thing appears.
+      const transcript = `${"we talked about the ferries ".repeat(20)}and then the harbour`;
+      threadMessages.push({
+        id: "call-end-1",
+        role: "user",
+        metadata: { kind: "voice-call", recordingId: "rec-1", durationSec: 12 },
+        parts: [{ type: "text", text: `Voice call transcript:\n${transcript}` }],
+      });
+      renderPane();
+
+      fireEvent.click(screen.getByRole("button", { name: /Voice call/ }));
+      await waitFor(() => expect(screen.getByText(transcript)).toBeTruthy());
+    });
   });
 });

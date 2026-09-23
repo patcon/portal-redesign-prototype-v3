@@ -305,50 +305,70 @@ interface ChatMessageProps {
 
 // ─── Voice Message ─────────────────────────────────────────────────────────
 
+/**
+ * Diverges from upstream chatcn, and has to be re-applied after a re-pull.
+ *
+ * Upstream's version is a mock: it never touches `voice.url`, and fakes its
+ * progress with a `setInterval` running against `voice.duration`. Dropped into
+ * a real conversation it draws a convincing waveform and plays silence. This
+ * one drives an actual `<audio>` element — same markup, same bars, same
+ * colours, but the clock is the element's rather than a timer's, the bars seek,
+ * and a recording still being made counts up instead of down.
+ */
+
 function ChatVoiceMessage({ voice, isOutgoing }: { voice: NonNullable<ChatMessageData["voice"]>; isOutgoing: boolean }) {
+  const audioRef = React.useRef<HTMLAudioElement>(null)
   const [playing, setPlaying] = React.useState(false)
-  const [progress, setProgress] = React.useState(0)
-  const progressRef = React.useRef(0)
+  const [elapsed, setElapsed] = React.useState(0)
 
-  React.useEffect(() => {
-    progressRef.current = progress
-  }, [progress])
+  // A recording still being made has no length yet, so there is no fraction of
+  // it to be through and no countdown that would be true. The bars stay
+  // unplayed and the label counts up from zero.
+  const known = Number.isFinite(voice.duration) && voice.duration > 0
+  const progress = known ? Math.min(1, elapsed / voice.duration) : 0
 
-  const totalMins = Math.floor(voice.duration / 60)
-  const totalSecs = Math.floor(voice.duration % 60)
-  const elapsed = progress * voice.duration
-  const elapsedMins = Math.floor(elapsed / 60)
-  const elapsedSecs = Math.floor(elapsed % 60)
-  const timeLabel = playing || progress > 0
-    ? `${elapsedMins}:${elapsedSecs.toString().padStart(2, "0")}`
-    : `${totalMins}:${totalSecs.toString().padStart(2, "0")}`
+  const shown = playing || elapsed > 0 || !known ? elapsed : voice.duration
+  const timeLabel = `${Math.floor(shown / 60)}:${Math.floor(shown % 60).toString().padStart(2, "0")}`
 
   const progressIndex = Math.floor(progress * voice.waveform.length)
 
-  React.useEffect(() => {
-    if (!playing) return
-    const fps = 20
-    const step = 1 / (voice.duration * fps)
-    const id = setInterval(() => {
-      const next = progressRef.current + step
-      if (next >= 1) {
-        setProgress(0)
-        setPlaying(false)
-        clearInterval(id)
-      } else {
-        setProgress(next)
-      }
-    }, 1000 / fps)
-    return () => clearInterval(id)
-  }, [playing, voice.duration])
-
   const toggle = () => {
-    if (!playing && progress === 0) setProgress(0)
-    setPlaying((p) => !p)
+    const audio = audioRef.current
+    if (!audio) return
+    // Flipped here as well as from the element's own events: `play()` is a
+    // promise, and a button that waits for the network before admitting it was
+    // pressed reads as a broken button. The events below keep this honest if
+    // playback stops for a reason nobody clicked.
+    if (playing) {
+      audio.pause()
+      setPlaying(false)
+    } else {
+      void audio.play()
+      setPlaying(true)
+    }
+  }
+
+  const seek = (fraction: number) => {
+    const audio = audioRef.current
+    if (!audio || !known) return
+    audio.currentTime = fraction * voice.duration
+    setElapsed(audio.currentTime)
   }
 
   return (
     <div className="mt-1.5 flex items-center gap-3">
+      <audio
+        ref={audioRef}
+        src={voice.url}
+        preload="none"
+        onTimeUpdate={(event) => setElapsed(event.currentTarget.currentTime)}
+        onPlay={() => setPlaying(true)}
+        onPause={() => setPlaying(false)}
+        onEnded={() => {
+          setPlaying(false)
+          setElapsed(0)
+        }}
+      />
       <button
         onClick={toggle}
         className="flex w-9 h-9 shrink-0 items-center justify-center rounded-full transition-colors"
@@ -365,8 +385,12 @@ function ChatVoiceMessage({ voice, isOutgoing }: { voice: NonNullable<ChatMessag
         {voice.waveform.map((v, i) => {
           const played = i < progressIndex
           return (
-            <div
+            <button
               key={i}
+              type="button"
+              data-slot="chat-voice-bar"
+              aria-label={`Seek to ${Math.round(((i + 0.5) / voice.waveform.length) * 100)}%`}
+              onClick={() => seek((i + 0.5) / voice.waveform.length)}
               className="w-[3px] rounded-full transition-opacity"
               style={{
                 height: `${v * 100}%`,

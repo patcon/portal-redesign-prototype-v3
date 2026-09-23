@@ -17,7 +17,8 @@ import {
 import { MAX_TEXT } from "../shared";
 import type { ConversationState } from "../types";
 import { useCall } from "../hooks/useCall";
-import { createTimestampBook, toConversationMessages } from "./adapt";
+import { useRecordingHref, useRecordings } from "../hooks/useRecordings";
+import { createTimestampBook, recordingIdsOf, toConversationMessages } from "./adapt";
 
 /**
  * One conversation's messages, composer and call. Used by both the host console and
@@ -106,9 +107,16 @@ export function ChatPane({
   // Held as lazily-initialised state rather than a ref, so it is never read
   // during render before an effect has filled it in.
   const [timestampOf] = useState(createTimestampBook);
+
+  // A call's voice note is written before it has any audio, so how long it is
+  // and how loud it has been come from the recording itself — re-read while the
+  // call is still running, so the bars grow as people speak.
+  const recordingIds = useMemo(() => recordingIdsOf(messages), [messages]);
+  const recordings = useRecordings(eventId, chatId, recordingIds);
+  const recordingHref = useRecordingHref(eventId, chatId);
   const thread = useMemo(
-    () => toConversationMessages(messages, currentUser, timestampOf),
-    [messages, currentUser, timestampOf],
+    () => toConversationMessages(messages, currentUser, timestampOf, { recordingHref, recordings }),
+    [messages, currentUser, timestampOf, recordingHref, recordings],
   );
 
   const send = useCallback(

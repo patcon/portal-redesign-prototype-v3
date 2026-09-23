@@ -12,7 +12,7 @@ import type { ChatMessageData, ChatUser } from "@/components/ui/chatcn/types";
 import type { ActivityMessageData } from "@/components/dembrane/Activity";
 import type { ConversationMessage } from "@/components/dembrane/ConversationMessages";
 import type { PlatformMessageData } from "@/components/dembrane/PlatformMessage";
-import type { ChatEntry, ConversationState } from "../types";
+import type { ChatEntry, ConversationState, RecordingMeta } from "../types";
 
 /**
  * The shape this file reads out of `useAgentChat`, written structurally rather than
@@ -39,8 +39,39 @@ function textOf(message: AgentMessage): string {
 }
 
 function isVoiceCall(message: AgentMessage): boolean {
-  return (message.metadata as { kind?: string } | undefined)?.kind === "voice-call";
+  return kindOf(message) === "voice-call";
 }
+
+function kindOf(message: AgentMessage): string | undefined {
+  return (message.metadata as { kind?: string } | undefined)?.kind;
+}
+
+/** The recording a call message points at, if it has one. */
+function recordingIdOf(message: AgentMessage): string | null {
+  return (message.metadata as { recordingId?: string } | undefined)?.recordingId ?? null;
+}
+
+/**
+ * Every recording the thread refers to, in the order the calls happened.
+ *
+ * The pane fetches each one's metadata; a call in progress is re-read as it
+ * runs, which is what makes a live voice note grow. Both messages a call leaves
+ * behind name the same recording, so the list is deduplicated.
+ */
+export function recordingIdsOf(messages: AgentMessage[]): string[] {
+  const ids: string[] = [];
+  for (const message of messages) {
+    const id = recordingIdOf(message);
+    if (id && !ids.includes(id)) ids.push(id);
+  }
+  return ids;
+}
+
+/** What the pane knows about the recordings behind the calls in a thread. */
+export type RecordingContext = {
+  recordingHref: (recordingId: string) => string;
+  recordings: Record<string, RecordingMeta>;
+};
 
 /**
  * Remembers when each message was first seen, so the same message keeps the same
@@ -73,6 +104,11 @@ export type TimestampBook = ReturnType<typeof createTimestampBook>;
  *
  * - the participant's own turns, attributed to `currentUser` so chatcn lays them out
  *   on the outgoing side;
+ * - the start of a call, as a voice note — chatcn's own `voice` message shape, so it
+ *   needs no new branch anywhere downstream. It goes in when the call opens rather
+ *   than when it ends, which is what makes a call in progress visible in the thread,
+ *   and its length and bars are read from `recordings` so the message itself never has
+ *   to be rewritten as more audio lands;
  * - a finished voice call, as an `Activity` card — it is something that *happened* in
  *   the conversation rather than something anyone typed, and the transcript behind it
  *   goes in `detail` for whatever opens the card;
@@ -84,13 +120,41 @@ export function toConversationMessages(
   messages: AgentMessage[],
   currentUser: ChatUser,
   timestampOf: TimestampBook,
+  recordingContext?: RecordingContext,
 ): ConversationMessage[] {
   const out: ConversationMessage[] = [];
 
   for (const message of messages) {
     const text = textOf(message);
-    if (!text) continue;
     const timestamp = timestampOf(message.id);
+
+    if (kindOf(message) === "call-started") {
+      const recordingId = recordingIdOf(message);
+      // Without a recording there is nothing to play, and the marker's own text
+      // is for the model to read rather than for anyone to see.
+      if (!recordingId || !recordingContext) continue;
+      const meta = recordingContext.recordings[recordingId];
+      const note: ChatMessageData = {
+        id: message.id,
+        // The conversation's own device made this recording, so it belongs on
+        // the participant's side — and on the host's screen, where
+        // `currentUser` is the host, it lands on the other side by itself.
+        senderId: currentUser.id,
+        senderName: currentUser.name,
+        timestamp,
+        voice: {
+          url: recordingContext.recordingHref(recordingId),
+          // Zero until the first segment is flushed, which the player reads as
+          // "still being recorded" and counts up from rather than down.
+          duration: meta?.durationSec ?? 0,
+          waveform: meta?.waveform ?? [],
+        },
+      };
+      out.push(note);
+      continue;
+    }
+
+    if (!text) continue;
 
     if (isVoiceCall(message)) {
       const transcript = text.replace(TRANSCRIPT_PREFIX, "");
