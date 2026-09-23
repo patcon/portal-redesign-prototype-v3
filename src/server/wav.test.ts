@@ -114,6 +114,19 @@ describe("resumeTone", () => {
     expect(pcm[pcm.length - 1]).toBe(0);
   });
 
+  it("is two pops with silence between them", () => {
+    const pcm = samples();
+    const third = pcm.length / 3;
+    const run = (from: number, to: number) =>
+      peakOf(new Uint8Array(pcm.buffer, from * BYTES_PER_SAMPLE, (to - from) * BYTES_PER_SAMPLE));
+
+    // Two marks rather than one: a single tone in a recording of a room is
+    // something that might have been in the room. A pair is plainly put there.
+    expect(run(0, third)).toBeGreaterThan(0);
+    expect(run(third, third * 2)).toBe(0);
+    expect(run(third * 2, pcm.length)).toBeGreaterThan(0);
+  });
+
   it("is the same bytes every time, so it can be built once", () => {
     expect(resumeTone()).toBe(resumeTone());
   });

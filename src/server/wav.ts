@@ -95,11 +95,14 @@ export function peakOf(pcm: Uint8Array): number {
  * apart. This is what goes in the seam so the break is audible.
  *
  * Quiet and short on purpose: it is a punctuation mark in someone's
- * conversation, not an alert. A Hann envelope over the whole tone takes it up
- * from and back down to true silence, so it splices into raw PCM without the
- * click an abrupt edge would give.
+ * conversation, not an alert. Two pops rather than one, because a single tone
+ * in a recording of a room is something that might have been in the room,
+ * while a matched pair is plainly put there. A Hann envelope over each pop
+ * takes it up from and back down to true silence, so the tone splices into raw
+ * PCM without the click an abrupt edge would give.
  */
-const TONE_SECONDS = 0.14;
+const POP_SECONDS = 0.06;
+const POP_GAP_SECONDS = 0.06;
 const TONE_HZ = 587.33; // D5 — high enough to read as a marker over speech.
 const TONE_GAIN = 0.12;
 
@@ -108,13 +111,20 @@ let tone: Uint8Array | null = null;
 export function resumeTone(): Uint8Array {
   if (tone) return tone;
 
-  const count = Math.round(SAMPLE_RATE * TONE_SECONDS);
-  const pcm = new Int16Array(count);
-  for (let i = 0; i < count; i++) {
-    const envelope = 0.5 - 0.5 * Math.cos((2 * Math.PI * i) / (count - 1));
-    const wave = Math.sin((2 * Math.PI * TONE_HZ * i) / SAMPLE_RATE);
-    pcm[i] = Math.round(wave * envelope * TONE_GAIN * 32767);
-  }
+  const pop = Math.round(SAMPLE_RATE * POP_SECONDS);
+  const gap = Math.round(SAMPLE_RATE * POP_GAP_SECONDS);
+  const pcm = new Int16Array(pop * 2 + gap);
+
+  const writePop = (at: number) => {
+    for (let i = 0; i < pop; i++) {
+      const envelope = 0.5 - 0.5 * Math.cos((2 * Math.PI * i) / (pop - 1));
+      const wave = Math.sin((2 * Math.PI * TONE_HZ * i) / SAMPLE_RATE);
+      pcm[at + i] = Math.round(wave * envelope * TONE_GAIN * 32767);
+    }
+  };
+  writePop(0);
+  writePop(pop + gap);
+
   tone = new Uint8Array(pcm.buffer);
   return tone;
 }
