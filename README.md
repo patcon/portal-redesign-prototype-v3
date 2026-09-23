@@ -25,6 +25,31 @@ Serve on a LAN address (`pnpm start` already passes `--host`) and the QR code
 encodes that address, so an event runs from a laptop on a local router with no
 internet.
 
+## What it does
+
+### For participants
+
+- A familiar messenger interface — thread, composer and voice notes shaped
+  the way the ones on everybody's phone already are.
+- Conversational onboarding: the conversation asks what to call itself and
+  names itself from the answer, rather than opening with a form.
+- **Recording is a phone call.** Place a call to the platform, leave the phone
+  on the table, and talk. Mute whenever you like: the recording and the
+  transcript both mark where the break was and how long it lasted.
+- Live transcription of the conversation as it is spoken.
+- Play the call back or read its transcript afterwards, from the thread itself.
+
+### For hosts
+
+- A console of its own, with every conversation in the event in one view.
+- Read any conversation, and drop a message into it.
+- Read transcripts as they stream in *(coming soon — today the host sees the
+  excerpt each conversation pushes, not a live feed)*.
+- Listen in on a call still in progress, in near-realtime.
+- Ask the host thread's chatbot about what is being said across the
+  conversations — it has tools for listing and searching them.
+- Play back the audio or read the transcript for any conversation.
+
 ## Routes
 
 Every route hangs off an event id.
