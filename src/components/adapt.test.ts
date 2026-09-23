@@ -87,6 +87,20 @@ describe("a call's voice note", () => {
     expect(message.voice).toMatchObject({ duration: 0, waveform: [] });
   });
 
+  it("asks for a different url once the call is over, so the player reloads", () => {
+    const [live] = convert([started], {
+      "rec-1": { ended: false, durationSec: 2, waveform: [0.2] },
+    }) as ChatMessageData[];
+    const [done] = convert([started], {
+      "rec-1": { ended: true, durationSec: 12, waveform: [0.2] },
+    }) as ChatMessageData[];
+
+    // The live body is an unknown-length stream and cannot be seeked. Without a
+    // different url the element keeps the one it already loaded, and a finished
+    // call stays unseekable until the page is reloaded.
+    expect(done.voice?.url).not.toBe(live.voice?.url);
+  });
+
   it("takes its length and bars from the recording's own metadata", () => {
     const [message] = convert([started], {
       "rec-1": { ended: true, durationSec: 42.5, waveform: [0.1, 0.8] },

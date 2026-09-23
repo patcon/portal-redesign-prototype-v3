@@ -134,6 +134,11 @@ export function toConversationMessages(
       // is for the model to read rather than for anyone to see.
       if (!recordingId || !recordingContext) continue;
       const meta = recordingContext.recordings[recordingId];
+      // A call in progress is served as a stream of unknown length, which the
+      // browser cannot seek. Changing the url when it ends is what makes the
+      // element drop that body and pick up the finished, seekable one, instead
+      // of staying stuck on the live version until the page is reloaded.
+      const href = recordingContext.recordingHref(recordingId);
       const note: ChatMessageData = {
         id: message.id,
         // The conversation's own device made this recording, so it belongs on
@@ -143,7 +148,7 @@ export function toConversationMessages(
         senderName: currentUser.name,
         timestamp,
         voice: {
-          url: recordingContext.recordingHref(recordingId),
+          url: meta?.ended ? `${href}?ended=1` : href,
           // Zero until the first segment is flushed, which the player reads as
           // "still being recorded" and counts up from rather than down.
           duration: meta?.durationSec ?? 0,
