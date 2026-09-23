@@ -103,12 +103,13 @@ describe("ChatVoiceMessage", () => {
     });
 
     // A bar as tall as its sample is nothing to aim at when the sample is
-    // silence, so every bar sits on a faint full-height one that takes the
-    // click on its behalf.
-    const rails = container.querySelectorAll("[data-slot='chat-voice-rail']");
-    expect(rails).toHaveLength(3);
-    for (const bar of container.querySelectorAll("[data-slot='chat-voice-bar']")) {
+    // silence, so the click target spans the track's height — but stays
+    // invisible, or it would draw over the waveform's own shape.
+    const bars = container.querySelectorAll("[data-slot='chat-voice-bar']");
+    expect(bars).toHaveLength(3);
+    for (const bar of bars) {
       expect(bar.className).toContain("h-full");
+      expect(bar.className).toContain("bg-transparent");
     }
   });
 

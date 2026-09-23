@@ -322,8 +322,8 @@ interface ChatMessageProps {
  */
 
 /**
- * How many bars the track holds. The track is this many 3px bars and the 2px
- * gaps between them — 178px — and never any wider.
+ * How many bars the track holds. Each bar owns a 5px column — 3px of bar and
+ * the gap beside it — so the track is 180px and never any wider.
  */
 export const VOICE_TRACK_BARS = 36
 
@@ -424,7 +424,10 @@ function ChatVoiceMessage({ voice, isOutgoing }: { voice: NonNullable<ChatMessag
           <Play className="w-4 h-4 ml-0.5" style={{ color: "white" }} fill="white" />
         )}
       </button>
-      <div className="flex w-[178px] max-w-full shrink-0 items-center gap-[2px] h-8 overflow-hidden">
+      {/* No gap: each bar's column carries its own spacing, so the whole
+          track is seekable rather than a row of targets with dead air between
+          them. */}
+      <div className="flex w-[180px] max-w-full shrink-0 items-center h-8 overflow-hidden">
         {bars.map(({ value, fraction }, i) => {
           const played = i < progressIndex
           return (
@@ -434,23 +437,15 @@ function ChatVoiceMessage({ voice, isOutgoing }: { voice: NonNullable<ChatMessag
               data-slot="chat-voice-bar"
               aria-label={`Seek to ${Math.round(fraction * 100)}%`}
               onClick={() => seek(fraction)}
-              className="relative flex h-full w-[3px] shrink-0 items-center justify-center"
+              // A bar as tall as its sample is nothing to aim at where the
+              // recording is silent, so the target spans the track's height.
+              // It stays transparent: anything drawn there reads as waveform
+              // and hides the shape the waveform is there to show.
+              className="flex h-full w-[5px] shrink-0 items-center justify-center bg-transparent"
             >
-              {/* A bar as tall as its sample is nothing to aim at where the
-                  recording is silent, so each one sits on a faint rail that
-                  spans the track's full height and takes the click for it. */}
               <span
                 aria-hidden
-                data-slot="chat-voice-rail"
-                className="absolute inset-y-0 w-full rounded-full"
-                style={{
-                  background: isOutgoing ? "white" : "var(--chat-accent)",
-                  opacity: isOutgoing ? 0.18 : 0.15,
-                }}
-              />
-              <span
-                aria-hidden
-                className="relative w-full rounded-full transition-opacity"
+                className="w-[3px] rounded-full transition-opacity"
                 style={{
                   height: `${value * 100}%`,
                   background: isOutgoing ? "white" : "var(--chat-accent)",
