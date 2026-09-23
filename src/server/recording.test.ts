@@ -1,6 +1,7 @@
 import { DatabaseSync } from "node:sqlite";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { Recorder, type BucketLike, type SqlLike } from "./recording";
+import { resumeTone } from "./wav";
 import { SAMPLE_RATE } from "./wav";
 
 /**
@@ -325,6 +326,88 @@ describe("Recorder", () => {
     it("lists a recording as open until it ends, so a stalled call can be flushed", () => {
       const { recordingId: id } = recorder.open("session-a", "conn-1", CHAT);
       expect(recorder.openRecordings()).toEqual([id]);
+    });
+  });
+
+  describe("the tone that marks a resumed recording", () => {
+    /** A recorder on a clock the test winds forward, as a paused call does. */
+    function onClock() {
+      let at = 1_000;
+      const clocked = new Recorder(sqliteAdapter(db), r2.bucket, {
+        segmentBytes: SEGMENT_BYTES,
+        now: () => at,
+      });
+      clocked.ensureSchema();
+      return { recorder: clocked, wait: (ms: number) => (at += ms) };
+    }
+
+    /** Everything staged for a recording, as one run of PCM. */
+    function staged(recordingId: string): Uint8Array {
+      const rows = db
+        .prepare("SELECT bytes FROM rec_pending WHERE recording = ? ORDER BY seq")
+        .all(recordingId) as { bytes: Uint8Array }[];
+      const total = rows.reduce((sum, row) => sum + row.bytes.byteLength, 0);
+      const out = new Uint8Array(total);
+      let at = 0;
+      for (const row of rows) {
+        out.set(row.bytes, at);
+        at += row.bytes.byteLength;
+      }
+      return out;
+    }
+
+    it("goes in when audio picks up after a pause", () => {
+      const { recorder: clocked, wait } = onClock();
+      const { recordingId: id } = clocked.open("session-a", "conn-1", CHAT);
+      clocked.append(id, pcm(320));
+      wait(8_000);
+      clocked.append(id, pcm(320));
+
+      // Muting stops the client sending audio at all, so without this the two
+      // sides of the pause butt together as one continuous-sounding stretch.
+      expect(staged(id).byteLength).toBe(640 + resumeTone().byteLength);
+    });
+
+    it("stays out of audio that never stopped arriving", () => {
+      const { recorder: clocked, wait } = onClock();
+      const { recordingId: id } = clocked.open("session-a", "conn-1", CHAT);
+      clocked.append(id, pcm(320));
+      wait(100);
+      clocked.append(id, pcm(320));
+
+      expect(staged(id).byteLength).toBe(640);
+    });
+
+    it("stays out of the first frame of a call", () => {
+      const { recorder: clocked, wait } = onClock();
+      const { recordingId: id } = clocked.open("session-a", "conn-1", CHAT);
+      wait(60_000);
+      clocked.append(id, pcm(320));
+
+      // Nothing was interrupted: the call simply had not started speaking yet.
+      expect(staged(id).byteLength).toBe(320);
+    });
+
+    it("lands before the audio that resumed, not after it", () => {
+      const { recorder: clocked, wait } = onClock();
+      const { recordingId: id } = clocked.open("session-a", "conn-1", CHAT);
+      clocked.append(id, pcm(320));
+      wait(8_000);
+      clocked.append(id, pcm(320));
+
+      const tone = resumeTone();
+      expect(staged(id).slice(320, 320 + tone.byteLength)).toEqual(tone);
+    });
+
+    it("leaves a call that ends while paused alone", async () => {
+      const { recorder: clocked, wait } = onClock();
+      const { recordingId: id } = clocked.open("session-a", "conn-1", CHAT);
+      clocked.append(id, pcm(320));
+      wait(8_000);
+      const summary = await clocked.end(id);
+
+      // Nothing resumed, so there is no seam to mark.
+      expect(summary.totalBytes).toBe(320);
     });
   });
 

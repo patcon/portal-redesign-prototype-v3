@@ -85,3 +85,36 @@ export function peakOf(pcm: Uint8Array): number {
   }
   return peak / 32768;
 }
+
+/**
+ * A soft chime marking the point where a paused recording picks up again.
+ *
+ * Muting stops the client sending audio altogether, so the frames on either
+ * side of a pause concatenate into one continuous-sounding stretch — a splice
+ * nobody listening back can hear, between two moments that may be minutes
+ * apart. This is what goes in the seam so the break is audible.
+ *
+ * Quiet and short on purpose: it is a punctuation mark in someone's
+ * conversation, not an alert. A Hann envelope over the whole tone takes it up
+ * from and back down to true silence, so it splices into raw PCM without the
+ * click an abrupt edge would give.
+ */
+const TONE_SECONDS = 0.14;
+const TONE_HZ = 587.33; // D5 — high enough to read as a marker over speech.
+const TONE_GAIN = 0.12;
+
+let tone: Uint8Array | null = null;
+
+export function resumeTone(): Uint8Array {
+  if (tone) return tone;
+
+  const count = Math.round(SAMPLE_RATE * TONE_SECONDS);
+  const pcm = new Int16Array(count);
+  for (let i = 0; i < count; i++) {
+    const envelope = 0.5 - 0.5 * Math.cos((2 * Math.PI * i) / (count - 1));
+    const wave = Math.sin((2 * Math.PI * TONE_HZ * i) / SAMPLE_RATE);
+    pcm[i] = Math.round(wave * envelope * TONE_GAIN * 32767);
+  }
+  tone = new Uint8Array(pcm.buffer);
+  return tone;
+}

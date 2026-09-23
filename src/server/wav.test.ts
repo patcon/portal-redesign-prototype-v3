@@ -1,5 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { STREAMING_SIZE, durationSeconds, peakOf, SAMPLE_RATE, wavHeader } from "./wav";
+import {
+  BYTES_PER_SAMPLE,
+  STREAMING_SIZE,
+  durationSeconds,
+  peakOf,
+  resumeTone,
+  SAMPLE_RATE,
+  wavHeader,
+} from "./wav";
 
 /** The four-character tag at `offset`, as WAV spells its chunk names. */
 function tag(header: Uint8Array, offset: number): string {
@@ -76,5 +84,37 @@ describe("peakOf", () => {
 
   it("is zero for an empty buffer rather than -Infinity", () => {
     expect(peakOf(new Uint8Array(0))).toBe(0);
+  });
+});
+
+describe("resumeTone", () => {
+  /** The tone's samples, read back the way the recording stores them. */
+  function samples(): Int16Array {
+    const tone = resumeTone();
+    return new Int16Array(tone.buffer, tone.byteOffset, tone.byteLength / BYTES_PER_SAMPLE);
+  }
+
+  it("is short enough to mark a gap rather than fill it", () => {
+    expect(durationSeconds(resumeTone().byteLength)).toBeLessThan(0.3);
+  });
+
+  it("is a whole number of samples, so it cannot shear the stream", () => {
+    expect(resumeTone().byteLength % BYTES_PER_SAMPLE).toBe(0);
+  });
+
+  it("is gentle rather than loud", () => {
+    const peak = peakOf(resumeTone());
+    expect(peak).toBeGreaterThan(0);
+    expect(peak).toBeLessThan(0.25);
+  });
+
+  it("starts and ends at silence, so it splices in without a click", () => {
+    const pcm = samples();
+    expect(pcm[0]).toBe(0);
+    expect(pcm[pcm.length - 1]).toBe(0);
+  });
+
+  it("is the same bytes every time, so it can be built once", () => {
+    expect(resumeTone()).toBe(resumeTone());
   });
 });

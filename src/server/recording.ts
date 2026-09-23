@@ -33,7 +33,7 @@
  * the only way to prove that a failed upload leaves the audio staged.
  */
 
-import { BYTES_PER_SAMPLE, durationSeconds, peakOf, SAMPLE_RATE } from "./wav";
+import { BYTES_PER_SAMPLE, durationSeconds, peakOf, resumeTone, SAMPLE_RATE } from "./wav";
 
 /** The slice of `DurableObjectStorage["sql"]` a recording needs. */
 export type SqlLike = {
@@ -76,6 +76,17 @@ export type RecordingSummary = {
  */
 const SEGMENT_BYTES = 64_000;
 
+/**
+ * How long audio has to stop arriving before picking up counts as a resume.
+ *
+ * Frames come ten a second, so a gap this size is not jitter or a slow network:
+ * it is a muted microphone, since the client sends nothing at all while muted.
+ * Generous on purpose — marking a seam that was really a stutter is worse than
+ * missing a very short pause, because the mark is a sound in someone's
+ * recording.
+ */
+const RESUME_GAP_MS = 1_500;
+
 /** Schema version currently applied by {@link Recorder.ensureSchema}. */
 const SCHEMA_VERSION = 1;
 
@@ -93,6 +104,17 @@ export class Recorder {
   #sql: SqlLike;
   #bucket: BucketLike;
   #segmentBytes: number;
+  #now: () => number;
+
+  /**
+   * When each recording last had audio, in memory: the only thing needed to
+   * tell a pause from a stream still arriving, and not worth a read per frame.
+   *
+   * Empty after an eviction, which costs the tone on a pause that spans one.
+   * The alternative is a write on the hot path to mark every frame, for a mark
+   * that matters a couple of times in a call.
+   */
+  #lastFrameAt = new Map<string, number>();
 
   /**
    * Which recording a transcriber session is feeding, in memory.
@@ -118,10 +140,15 @@ export class Recorder {
    */
   #chain: Promise<void> = Promise.resolve();
 
-  constructor(sql: SqlLike, bucket: BucketLike, options?: { segmentBytes?: number }) {
+  constructor(
+    sql: SqlLike,
+    bucket: BucketLike,
+    options?: { segmentBytes?: number; now?: () => number },
+  ) {
     this.#sql = sql;
     this.#bucket = bucket;
     this.#segmentBytes = options?.segmentBytes ?? SEGMENT_BYTES;
+    this.#now = options?.now ?? Date.now;
   }
 
   /**
@@ -252,6 +279,18 @@ export class Recorder {
    * `feed` and must not make the voice pipeline wait on R2.
    */
   append(recordingId: string, chunk: ArrayBuffer): boolean {
+    // Before the audio, so the tone sits in the seam rather than after the
+    // first thing said on the way back.
+    const at = this.#now();
+    const last = this.#lastFrameAt.get(recordingId);
+    this.#lastFrameAt.set(recordingId, at);
+    if (last !== undefined && at - last >= RESUME_GAP_MS) this.#stage(recordingId, resumeTone());
+
+    return this.#stage(recordingId, new Uint8Array(chunk));
+  }
+
+  /** Stage one run of PCM, and say whether that is enough for a segment. */
+  #stage(recordingId: string, bytes: Uint8Array): boolean {
     const seq = this.#nextPendingSeq(recordingId);
     if (seq === null) return false;
 
@@ -259,9 +298,9 @@ export class Recorder {
       "INSERT INTO rec_pending (recording, seq, bytes) VALUES (?, ?, ?)",
       recordingId,
       seq,
-      new Uint8Array(chunk),
+      bytes,
     );
-    const buffered = this.#bufferedBytes(recordingId) + chunk.byteLength;
+    const buffered = this.#bufferedBytes(recordingId) + bytes.byteLength;
     this.#buffered.set(recordingId, buffered);
     return buffered >= this.#segmentBytes;
   }
@@ -287,6 +326,7 @@ export class Recorder {
       recordingId,
     );
     this.#buffered.delete(recordingId);
+    this.#lastFrameAt.delete(recordingId);
     for (const [session, id] of this.#bySession) {
       if (id === recordingId) this.#bySession.delete(session);
     }
