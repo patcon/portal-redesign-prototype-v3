@@ -338,6 +338,32 @@ export class Recorder {
     ).map((row) => row.id);
   }
 
+  /**
+   * Open recordings whose connection is no longer here — calls nobody ended.
+   *
+   * A clean hang-up and a dropped socket both reach `onCallEnd`, so neither
+   * leaves anything for this to find. What does is the object going away
+   * mid-call: a crash, a redeploy, a `wrangler` reload. The recording is
+   * durable and survives that; the hook that should have closed it does not
+   * run, and the call is left open forever with no transcript behind it.
+   *
+   * Matching on the connection rather than on elapsed time is what makes this
+   * safe to run on a short heartbeat: a call that has gone quiet — a long
+   * pause, a muted room — still has its socket, so it is not swept up.
+   */
+  abandoned(liveConnectionIds: Iterable<string>): { id: string; connectionId: string }[] {
+    const live = new Set(liveConnectionIds);
+    return (
+      this.#sql
+        .exec(
+          "SELECT id, connection_id FROM rec_recordings WHERE ended_at IS NULL ORDER BY started_at",
+        )
+        .toArray() as { id: string; connection_id: string }[]
+    )
+      .filter((row) => !live.has(row.connection_id))
+      .map((row) => ({ id: row.id, connectionId: row.connection_id }));
+  }
+
   /** Read one segment's bytes back, for the playback route. */
   segmentBody(key: string): Promise<{ body: ReadableStream<Uint8Array> } | null> {
     return this.#bucket.get(key);

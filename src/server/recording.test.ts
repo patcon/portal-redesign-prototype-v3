@@ -328,6 +328,34 @@ describe("Recorder", () => {
     });
   });
 
+  describe("abandoned", () => {
+    it("leaves a recording alone while its connection is still there", () => {
+      recorder.open("session-a", "conn-1", CHAT);
+      expect(recorder.abandoned(["conn-1"])).toEqual([]);
+    });
+
+    it("reports a recording whose connection is gone", () => {
+      const { recordingId: id } = recorder.open("session-a", "conn-1", CHAT);
+      // What an object finds when it wakes after a crash mid-call: the
+      // recording is still open, and the socket that was filling it is not.
+      expect(recorder.abandoned([])).toEqual([{ id, connectionId: "conn-1" }]);
+    });
+
+    it("reports nothing once the recording has ended", async () => {
+      const { recordingId: id } = recorder.open("session-a", "conn-1", CHAT);
+      await recorder.end(id);
+      expect(recorder.abandoned([])).toEqual([]);
+    });
+
+    it("keeps one call's recording while another's connection is gone", () => {
+      recorder.open("session-a", "conn-1", CHAT);
+      const { recordingId: dropped } = recorder.open("session-b", "conn-2", CHAT);
+      expect(recorder.abandoned(["conn-1"])).toEqual([
+        { id: dropped, connectionId: "conn-2" },
+      ]);
+    });
+  });
+
   it("never throws out of the audio path when R2 is down", async () => {
     const warn = vi.spyOn(console, "error").mockImplementation(() => {});
     const { recordingId: id } = recorder.open("session-a", "conn-1", CHAT);

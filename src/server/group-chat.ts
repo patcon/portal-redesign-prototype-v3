@@ -51,6 +51,12 @@ const ChatAgent = withVoiceInput(AIChatAgent, {
   diagnostics: { browserConsole: true },
 });
 
+/** The recording a `voice-call` transcript belongs to, if it is one. */
+function transcriptFor(message: UIMessage): string | null {
+  const metadata = message.metadata as { kind?: string; recordingId?: string } | undefined;
+  return metadata?.kind === "voice-call" ? (metadata.recordingId ?? null) : null;
+}
+
 /** The text of a UI message, flattened for the hub's index. */
 function messageText(message: UIMessage): string {
   return message.parts
@@ -217,7 +223,6 @@ export class GroupChat extends ChatAgent<Env, ConversationState> {
     // to be ready; this is where it gets a name, so hang-up can go looking for
     // what the call heard.
     const sessionId = this.transcriber.claim(connection.id);
-    this.#calls.set(connection.id, []);
     if (!sessionId) return;
 
     const owner = await this.ctx.storage.get<ChatOwner>("owner");
@@ -228,10 +233,14 @@ export class GroupChat extends ChatAgent<Env, ConversationState> {
     // connection rather than the session — the WebSocket survives an eviction
     // and the transcriber session does not — so a resumed call carries on
     // filling the same recording, and `fresh` tells us not to announce it
-    // again. (The utterances in `#calls` are not so lucky: they are reset just
-    // above, which is a pre-existing hole in what a resumed call remembers.)
+    // again.
     const { recordingId, fresh } = this.#recorder.open(sessionId, connection.id, this.#chatId);
     this.#recording.set(connection.id, recordingId);
+    // The utterances go with it. They are kept per recording rather than per
+    // connection because that is the identity that survives: an evicted call
+    // comes back through here and picks up what it had already heard, instead
+    // of closing later with only the half said since it woke.
+    this.#calls.set(connection.id, fresh ? [] : await this.#storedUtterances(recordingId));
     await this.schedule(STALLED_FLUSH_SECONDS, "flushStalledRecordings");
     if (!fresh) return;
 
@@ -268,11 +277,28 @@ export class GroupChat extends ChatAgent<Env, ConversationState> {
     }
   }
 
-  /** Flush a call whose audio stopped arriving without anyone hanging up. */
+  /**
+   * Flush a call whose audio stopped arriving, and close out one nobody ended.
+   *
+   * The schedule is a durable alarm, so it outlives the object it was set on:
+   * this is what runs after a crash or a redeploy mid-call, when `onCallEnd`
+   * never got the chance to. Any recording still open whose connection is gone
+   * gets the same ending a hang-up would have given it — the audio closed, and
+   * the transcript left in the thread — rather than staying open forever with
+   * a voice note that never stops claiming to be recording.
+   */
   async flushStalledRecordings(): Promise<void> {
     const open = this.#recorder.openRecordings();
     if (open.length === 0) return;
     for (const recordingId of open) await this.#recorder.flush(recordingId);
+
+    const live = [...this.getConnections()].map((connection) => connection.id);
+    for (const call of this.#recorder.abandoned(live)) {
+      console.warn(`[call] ${call.connectionId.slice(0, 8)}: closing a call nobody ended`);
+      await this.#closeCall(call.connectionId, call.id);
+    }
+
+    if (this.#recorder.openRecordings().length === 0) return;
     await this.schedule(STALLED_FLUSH_SECONDS, "flushStalledRecordings");
   }
 
@@ -287,8 +313,27 @@ export class GroupChat extends ChatAgent<Env, ConversationState> {
     const utterances = this.#calls.get(connection.id) ?? [];
     utterances.push(text);
     this.#calls.set(connection.id, utterances);
-    await this.ctx.storage.put("transcript", utterances.join(" ").slice(-TRANSCRIPT_EXCERPT));
+    await this.#rememberUtterances(connection.id, utterances);
     await this.#pushToHub();
+  }
+
+  /** Where a call's words wait, so an object that is evicted or crashes mid-call
+   * does not come back with only what it heard afterwards. */
+  #utterancesKey(recordingId: string): string {
+    return `call-utterances:${recordingId}`;
+  }
+
+  async #storedUtterances(recordingId: string): Promise<string[]> {
+    return (await this.ctx.storage.get<string[]>(this.#utterancesKey(recordingId))) ?? [];
+  }
+
+  /** Keep the durable copy and the host's excerpt in step with what was heard. */
+  async #rememberUtterances(connectionId: string, utterances: string[]): Promise<void> {
+    const recordingId = this.#recording.get(connectionId);
+    if (recordingId) {
+      await this.ctx.storage.put(this.#utterancesKey(recordingId), utterances);
+    }
+    await this.ctx.storage.put("transcript", utterances.join(" ").slice(-TRANSCRIPT_EXCERPT));
   }
 
   /**
@@ -297,13 +342,28 @@ export class GroupChat extends ChatAgent<Env, ConversationState> {
    * transcript unprompted, but it is now in the context for the next question.
    */
   async onCallEnd(connection: Connection): Promise<void> {
-    const utterances = this.#calls.get(connection.id) ?? [];
-    this.#calls.delete(connection.id);
+    await this.#closeCall(connection.id, this.#recording.get(connection.id) ?? null);
+  }
+
+  /**
+   * Leave the transcript behind and close the recording, however the call
+   * ended — a hang-up, a dropped socket, or the sweep below finding one that
+   * nothing ever ended.
+   */
+  async #closeCall(connectionId: string, recordingId: string | null): Promise<void> {
+    // A call swept up after a crash has no in-memory utterances to read: the
+    // map went with the object. What it heard is on disk.
+    const utterances =
+      this.#calls.get(connectionId) ??
+      (recordingId ? await this.#storedUtterances(recordingId) : []);
+    this.#calls.delete(connectionId);
+    // Read out above, and of no use to anyone once this call is closed — so
+    // dropped here rather than after the returns further down.
+    if (recordingId) await this.ctx.storage.delete(this.#utterancesKey(recordingId));
 
     // Close the recording first, so the message that announces the call is
     // over cannot land before the audio it points at is all in R2.
-    const recordingId = this.#recording.get(connection.id) ?? null;
-    this.#recording.delete(connection.id);
+    this.#recording.delete(connectionId);
     const recording = recordingId ? await this.#recorder.end(recordingId) : null;
     if (recording) {
       console.log(
@@ -315,26 +375,33 @@ export class GroupChat extends ChatAgent<Env, ConversationState> {
     // and in a noisy room — a fan, a busy venue — that pause may never come.
     // Whatever was said since the last final is still sitting in the interim
     // text, so take it rather than lose the end of what someone said.
-    const trailing = this.transcriber.takeTrailingInterim(connection.id);
-    this.transcriber.release(connection.id);
+    const trailing = this.transcriber.takeTrailingInterim(connectionId);
+    this.transcriber.release(connectionId);
     if (trailing) {
       console.log(
-        `[call] end ${connection.id.slice(0, 8)}: trailing interim ${JSON.stringify(trailing)}`,
+        `[call] end ${connectionId.slice(0, 8)}: trailing interim ${JSON.stringify(trailing)}`,
       );
       utterances.push(trailing);
       // Keep the host's excerpt in step: `onTranscript` never saw this text.
       await this.ctx.storage.put("transcript", utterances.join(" ").slice(-TRANSCRIPT_EXCERPT));
     }
 
-    console.log(`[call] end ${connection.id.slice(0, 8)}, ${utterances.length} utterances`);
+    console.log(`[call] end ${connectionId.slice(0, 8)}, ${utterances.length} utterances`);
     if (utterances.length === 0) {
       // Silence here is what made this bug invisible: a failed transcriber ends
       // the call through the same hook as a clean hang-up.
-      console.warn(`[call] end ${connection.id.slice(0, 8)}: NOTHING TRANSCRIBED`);
+      console.warn(`[call] end ${connectionId.slice(0, 8)}: NOTHING TRANSCRIBED`);
       if (!recording?.totalBytes) return;
       // There is still audio, though, and it is worth keeping — a call the
       // provider could not hear is exactly the one someone will want to play
       // back. The transcript stays empty and the voice note carries the call.
+    }
+
+    // Two paths can close the same call — the sweep, and a hang-up that
+    // arrives afterwards — and a conversation with the same call transcribed
+    // into it twice is worse than one closed a heartbeat late.
+    if (recordingId && this.messages.some((message) => transcriptFor(message) === recordingId)) {
+      return;
     }
 
     await this.persistMessages([
