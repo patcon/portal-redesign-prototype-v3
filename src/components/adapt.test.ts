@@ -59,7 +59,11 @@ describe("a call's voice note", () => {
   };
 
   /** What `toConversationMessages` is given by the pane, minus the defaults. */
-  function convert(messages: AgentMessage[], meta?: Record<string, RecordingMeta>) {
+  function convert(
+    messages: AgentMessage[],
+    meta?: Record<string, RecordingMeta>,
+    recordingHere = false,
+  ) {
     return toConversationMessages(
       messages,
       USER,
@@ -67,6 +71,7 @@ describe("a call's voice note", () => {
       {
         recordingHref: (id) => `/recordings/e/c/${id}.wav`,
         recordings: meta ?? {},
+        recordingHere,
       },
     );
   }
@@ -111,6 +116,38 @@ describe("a call's voice note", () => {
   it("says what it is, to pair with the card the call ends on", () => {
     const [message] = convert([started]) as ChatMessageData[];
     expect(message.voice?.title).toBe("Voice call started");
+  });
+
+  it("cannot be played on the device making the recording", () => {
+    const [message] = convert(
+      [started],
+      { "rec-1": { ended: false, durationSec: 2, waveform: [0.2] } },
+      true,
+    ) as ChatMessageData[];
+
+    // This device is the one in the call. Playing the recording back into the
+    // room it is still recording is confusing at best.
+    expect(message.voice?.locked).toBe(true);
+  });
+
+  it("plays on the host's screen while the same call is still running", () => {
+    const [message] = convert([started], {
+      "rec-1": { ended: false, durationSec: 2, waveform: [0.2] },
+    }) as ChatMessageData[];
+
+    // The host is not in the call, and listening in is the whole point there.
+    expect(message.voice?.locked).toBeFalsy();
+  });
+
+  it("plays again on the recording device once that call has ended", () => {
+    const [message] = convert(
+      [started],
+      { "rec-1": { ended: true, durationSec: 12, waveform: [0.2] } },
+      true,
+    ) as ChatMessageData[];
+
+    // A note from an earlier call is just a recording, even mid-call.
+    expect(message.voice?.locked).toBeFalsy();
   });
 
   it("is attributed to the conversation, so it sits on the participant's side", () => {

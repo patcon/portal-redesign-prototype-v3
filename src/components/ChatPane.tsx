@@ -114,9 +114,16 @@ export function ChatPane({
   const recordingIds = useMemo(() => recordingIdsOf(messages), [messages]);
   const recordings = useRecordings(eventId, chatId, recordingIds);
   const recordingHref = useRecordingHref(eventId, chatId);
+  // `call.inCall` is true only on the device holding the voice socket, so the
+  // host — reading the same thread, wanting to listen in — is never locked out.
   const thread = useMemo(
-    () => toConversationMessages(messages, currentUser, timestampOf, { recordingHref, recordings }),
-    [messages, currentUser, timestampOf, recordingHref, recordings],
+    () =>
+      toConversationMessages(messages, currentUser, timestampOf, {
+        recordingHref,
+        recordings,
+        recordingHere: call.inCall,
+      }),
+    [messages, currentUser, timestampOf, recordingHref, recordings, call.inCall],
   );
 
   const send = useCallback(

@@ -370,7 +370,7 @@ function ChatVoiceMessage({ voice, isOutgoing }: { voice: NonNullable<ChatMessag
 
   const toggle = () => {
     const audio = audioRef.current
-    if (!audio) return
+    if (!audio || voice.locked) return
     // Flipped here as well as from the element's own events: `play()` is a
     // promise, and a button that waits for the network before admitting it was
     // pressed reads as a broken button. The events below keep this honest if
@@ -386,7 +386,7 @@ function ChatVoiceMessage({ voice, isOutgoing }: { voice: NonNullable<ChatMessag
 
   const seek = (fraction: number) => {
     const audio = audioRef.current
-    if (!audio || !known) return
+    if (!audio || !known || voice.locked) return
     audio.currentTime = fraction * voice.duration
     setElapsed(audio.currentTime)
   }
@@ -420,9 +420,13 @@ function ChatVoiceMessage({ voice, isOutgoing }: { voice: NonNullable<ChatMessag
             console.error("[voice] playback failed", event.currentTarget.error)
           }}
         />
+        {/* Disabled rather than dropped: a note with its controls taken away
+            stops looking like a voice note, and the bars are still what shows
+            a call in progress being heard. */}
         <button
           onClick={toggle}
-          className="flex w-9 h-9 shrink-0 items-center justify-center rounded-full transition-colors"
+          disabled={voice.locked}
+          className="flex w-9 h-9 shrink-0 items-center justify-center rounded-full transition-colors disabled:cursor-default disabled:opacity-50"
           style={{ background: isOutgoing ? "rgba(255,255,255,0.20)" : "var(--chat-accent)" }}
           aria-label={playing ? "Pause voice message" : "Play voice message"}
         >
@@ -445,11 +449,12 @@ function ChatVoiceMessage({ voice, isOutgoing }: { voice: NonNullable<ChatMessag
                 data-slot="chat-voice-bar"
                 aria-label={`Seek to ${Math.round(fraction * 100)}%`}
                 onClick={() => seek(fraction)}
+                disabled={voice.locked}
                 // A bar as tall as its sample is nothing to aim at where the
                 // recording is silent, so the target spans the track's height.
                 // It stays transparent: anything drawn there reads as waveform
                 // and hides the shape the waveform is there to show.
-                className="flex h-full w-[5px] shrink-0 items-center justify-center bg-transparent"
+                className="flex h-full w-[5px] shrink-0 items-center justify-center bg-transparent disabled:cursor-default"
               >
                 <span
                   aria-hidden

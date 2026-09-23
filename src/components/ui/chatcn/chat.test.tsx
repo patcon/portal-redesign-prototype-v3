@@ -86,6 +86,20 @@ describe("ChatVoiceMessage", () => {
     expect(screen.getByText("Voice call started")).toBeTruthy();
   });
 
+  it("will not play or seek a locked recording", () => {
+    const { container } = renderVoice({
+      ...VOICE,
+      voice: { ...VOICE.voice!, locked: true },
+    });
+
+    const play = screen.getByRole("button", { name: /play voice message/i });
+    expect(play.hasAttribute("disabled")).toBe(true);
+    // Disabled rather than gone: the note still has to look like a voice note.
+    for (const bar of container.querySelectorAll("[data-slot='chat-voice-bar']")) {
+      expect(bar.hasAttribute("disabled")).toBe(true);
+    }
+  });
+
   it("draws one bar per waveform sample", () => {
     const { container } = renderVoice();
     expect(container.querySelectorAll("[data-slot='chat-voice-bar']")).toHaveLength(3);

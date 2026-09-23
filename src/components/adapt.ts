@@ -71,6 +71,17 @@ export function recordingIdsOf(messages: AgentMessage[]): string[] {
 export type RecordingContext = {
   recordingHref: (recordingId: string) => string;
   recordings: Record<string, RecordingMeta>;
+  /**
+   * Whether this screen is the one making a recording right now.
+   *
+   * The same thread is read from two places, and they want opposite things
+   * from a call in progress: the host is listening in, which is the point of
+   * serving a live recording at all, while the device in the call would be
+   * playing the room back into itself. So the note is locked here and only
+   * here — and only for the call still running, since an earlier one is just a
+   * recording whoever is holding the phone may want to hear.
+   */
+  recordingHere?: boolean;
 };
 
 /**
@@ -154,6 +165,7 @@ export function toConversationMessages(
           duration: meta?.durationSec ?? 0,
           waveform: meta?.waveform ?? [],
           title: "Voice call started",
+          locked: recordingContext.recordingHere && !meta?.ended,
         },
       };
       out.push(note);
