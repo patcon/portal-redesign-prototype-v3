@@ -136,6 +136,9 @@ export class GroupChat extends ChatAgent<Env, ConversationState> {
       tools: isHost && owner ? this.#hostTools(owner.eventId) : this.#conversationTools(),
       // Room for a tool call and the answer that reads its result.
       stopWhen: stepCountIs(5),
+      // Unset, OpenRouter pre-authorizes credit against the model's whole
+      // output ceiling (64k on Haiku) and 402s a chat that would use a sliver.
+      maxOutputTokens: 1024,
     });
     return result.toUIMessageStreamResponse();
   }
