@@ -1,7 +1,7 @@
 /** @vitest-environment jsdom */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
-import { ChatMessage, ChatProvider } from "./index";
+import { ChatMessage, ChatProvider, VOICE_TRACK_BARS } from "./index";
 import type { ChatMessageData, ChatUser } from "./types";
 
 const ME: ChatUser = { id: "me", name: "Me" };
@@ -81,6 +81,29 @@ describe("ChatVoiceMessage", () => {
   it("draws one bar per waveform sample", () => {
     const { container } = renderVoice();
     expect(container.querySelectorAll("[data-slot='chat-voice-bar']")).toHaveLength(3);
+  });
+
+  it("stops widening once the waveform fills the track", () => {
+    const long = Array.from({ length: 500 }, (_, i) => (i % 10) / 10);
+    const { container } = renderVoice({
+      ...VOICE,
+      voice: { ...VOICE.voice!, waveform: long },
+    });
+
+    // A call runs as long as it likes; the bubble it sits in does not grow
+    // with it. Past the track's capacity the waveform is folded down to fit.
+    const bars = container.querySelectorAll("[data-slot='chat-voice-bar']");
+    expect(bars).toHaveLength(VOICE_TRACK_BARS);
+  });
+
+  it("keeps folded bars seeking across the whole recording", () => {
+    const long = Array.from({ length: 500 }, () => 0.5);
+    renderVoice({ ...VOICE, voice: { ...VOICE.voice!, waveform: long } });
+
+    // Each bar stands for a slice of the recording, not for the sample that
+    // happens to share its index, so the last one is still the end.
+    expect(screen.getByRole("button", { name: /seek to 99%/i })).toBeTruthy();
+    expect(screen.getByRole("button", { name: /seek to 1%/i })).toBeTruthy();
   });
 
   it("counts up rather than down while a recording is still being made", () => {

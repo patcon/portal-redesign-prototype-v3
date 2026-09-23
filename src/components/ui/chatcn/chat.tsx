@@ -314,7 +314,42 @@ interface ChatMessageProps {
  * one drives an actual `<audio>` element — same markup, same bars, same
  * colours, but the clock is the element's rather than a timer's, the bars seek,
  * and a recording still being made counts up instead of down.
+ *
+ * The bar track is also a fixed width here. Upstream's waveform is a prop of
+ * settled length; ours gains a bar per flushed segment for as long as the call
+ * runs, and a track sized to its contents would drag the whole bubble wider
+ * every few seconds while somebody is still talking.
  */
+
+/**
+ * How many bars the track holds. The track is this many 3px bars and the 2px
+ * gaps between them — 178px — and never any wider.
+ */
+export const VOICE_TRACK_BARS = 36
+
+/**
+ * The bars to draw for a waveform, each with the fraction of the recording it
+ * stands for, so a folded bar still seeks to its own slice rather than to the
+ * sample that happens to share its index.
+ *
+ * Short of the track's capacity the samples are drawn one to a bar, filling
+ * from the left — which is what makes a recording in progress read as growing.
+ * Past it they are folded into that many buckets, each bar taking its bucket's
+ * loudest sample, so the peaks people are looking for survive the fold.
+ */
+function voiceBars(waveform: number[], slots = VOICE_TRACK_BARS) {
+  if (waveform.length <= slots) {
+    return waveform.map((value, i) => ({ value, fraction: (i + 0.5) / waveform.length }))
+  }
+  return Array.from({ length: slots }, (_, k) => {
+    const from = Math.floor((k * waveform.length) / slots)
+    const to = Math.max(from + 1, Math.floor(((k + 1) * waveform.length) / slots))
+    return {
+      value: Math.max(...waveform.slice(from, to)),
+      fraction: (k + 0.5) / slots,
+    }
+  })
+}
 
 function ChatVoiceMessage({ voice, isOutgoing }: { voice: NonNullable<ChatMessageData["voice"]>; isOutgoing: boolean }) {
   const audioRef = React.useRef<HTMLAudioElement>(null)
@@ -330,7 +365,8 @@ function ChatVoiceMessage({ voice, isOutgoing }: { voice: NonNullable<ChatMessag
   const shown = playing || elapsed > 0 || !known ? elapsed : voice.duration
   const timeLabel = `${Math.floor(shown / 60)}:${Math.floor(shown % 60).toString().padStart(2, "0")}`
 
-  const progressIndex = Math.floor(progress * voice.waveform.length)
+  const bars = voiceBars(voice.waveform)
+  const progressIndex = Math.floor(progress * bars.length)
 
   const toggle = () => {
     const audio = audioRef.current
@@ -388,22 +424,22 @@ function ChatVoiceMessage({ voice, isOutgoing }: { voice: NonNullable<ChatMessag
           <Play className="w-4 h-4 ml-0.5" style={{ color: "white" }} fill="white" />
         )}
       </button>
-      <div className="flex flex-1 items-center gap-[2px] h-8">
-        {voice.waveform.map((v, i) => {
+      <div className="flex w-[178px] max-w-full shrink-0 items-center gap-[2px] h-8 overflow-hidden">
+        {bars.map(({ value, fraction }, i) => {
           const played = i < progressIndex
           return (
             <button
               key={i}
               type="button"
               data-slot="chat-voice-bar"
-              aria-label={`Seek to ${Math.round(((i + 0.5) / voice.waveform.length) * 100)}%`}
-              onClick={() => seek((i + 0.5) / voice.waveform.length)}
-              className="w-[3px] rounded-full transition-opacity"
+              aria-label={`Seek to ${Math.round(fraction * 100)}%`}
+              onClick={() => seek(fraction)}
+              className="w-[3px] shrink-0 rounded-full transition-opacity"
               style={{
-                height: `${v * 100}%`,
+                height: `${value * 100}%`,
                 background: isOutgoing ? "white" : "var(--chat-accent)",
-                opacity: played ? 1 : 0.6 + v * 0.4,
-                ...(isOutgoing && !played ? { opacity: 0.4 + v * 0.3 } : {}),
+                opacity: played ? 1 : 0.6 + value * 0.4,
+                ...(isOutgoing && !played ? { opacity: 0.4 + value * 0.3 } : {}),
               }}
             />
           )
