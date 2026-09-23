@@ -1,7 +1,22 @@
 import type { Transcriber, TranscriberSession, TranscriberSessionOptions } from "agents/voice";
 
+/** Told about every frame of audio, so it can be recorded as well as heard. */
+export type AudioTap = (chunk: ArrayBuffer, sessionId: string) => void;
+
+export type CallTranscriberOptions = {
+  /**
+   * Called with each frame before the provider gets it. `sessionId` is what
+   * ties the audio to a call: the voice mixin creates the session before it
+   * knows which connection owns it, so the id minted here is the only handle
+   * that spans both moments. See {@link CallTranscriber.claim}.
+   */
+  onAudio?: AudioTap;
+};
+
 /** What one live call has said, and how much audio it took to say it. */
 type CallState = {
+  /** Identifies this call from the session's creation, before `claim` names it. */
+  sessionId: string;
   chunks: number;
   bytes: number;
   interims: number;
@@ -26,10 +41,17 @@ type CallState = {
  * from ever firing, and the speech is then lost when the socket closes. So we
  * keep the interim text heard since the last final: {@link takeTrailingInterim}
  * hands it back at hang-up, and a final clears it, so nothing is written twice.
+ *
+ * **The audio tap.** `withVoiceInput` offers no hook for raw frames, but every
+ * one of them passes through `feed` on its way to the provider — so this is
+ * also where a recording gets its audio, without forking the SDK. What it does
+ * with it is not this class's business: it hands the bytes outward and stays
+ * the decorator it is.
  */
 export class CallTranscriber implements Transcriber {
   #inner: Transcriber;
   #provider: string;
+  #onAudio: AudioTap | undefined;
 
   /** Live calls, by connection id. */
   #calls = new Map<string, CallState>();
@@ -42,13 +64,21 @@ export class CallTranscriber implements Transcriber {
    */
   #pending: CallState | null = null;
 
-  constructor(inner: Transcriber, provider: string) {
+  constructor(inner: Transcriber, provider: string, options?: CallTranscriberOptions) {
     this.#inner = inner;
     this.#provider = provider;
+    this.#onAudio = options?.onAudio;
   }
 
   createSession(options?: TranscriberSessionOptions): TranscriberSession {
-    const state: CallState = { chunks: 0, bytes: 0, interims: 0, finals: 0, trailing: "" };
+    const state: CallState = {
+      sessionId: crypto.randomUUID(),
+      chunks: 0,
+      bytes: 0,
+      interims: 0,
+      finals: 0,
+      trailing: "",
+    };
     this.#pending = state;
     console.log(`[stt] ${this.#provider}: opening session`);
 
@@ -80,6 +110,7 @@ export class CallTranscriber implements Transcriber {
       },
     });
 
+    const onAudio = this.#onAudio;
     const wrapped: TranscriberSession = {
       feed(chunk) {
         state.chunks += 1;
@@ -87,6 +118,13 @@ export class CallTranscriber implements Transcriber {
         if (state.chunks === 1) console.log(`[stt] first audio chunk (${chunk.byteLength} bytes)`);
         else if (state.chunks % 50 === 0) {
           console.log(`[stt] audio: ${state.chunks} chunks, ${(state.bytes / 1024).toFixed(0)}KB`);
+        }
+        try {
+          onAudio?.(chunk, state.sessionId);
+        } catch (error) {
+          // Recording is the lesser of the two jobs this frame has. A broken
+          // recorder must not take the call down with it.
+          console.error("[rec] dropping frame:", error);
         }
         session.feed(chunk);
       },
@@ -115,11 +153,18 @@ export class CallTranscriber implements Transcriber {
     return wrapped;
   }
 
-  /** Tie the session just created to the connection that will hang it up. */
-  claim(connectionId: string): void {
-    if (!this.#pending) return;
+  /**
+   * Tie the session just created to the connection that will hang it up.
+   *
+   * Returns that session's id, which is how the caller finds the recording the
+   * audio has been going into, or null if no session is waiting.
+   */
+  claim(connectionId: string): string | null {
+    if (!this.#pending) return null;
+    const { sessionId } = this.#pending;
     this.#calls.set(connectionId, this.#pending);
     this.#pending = null;
+    return sessionId;
   }
 
   /**

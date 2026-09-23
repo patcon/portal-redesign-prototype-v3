@@ -51,6 +51,27 @@ export type ChatOwner = {
  */
 export type ConversationState = { name: string | null; participants: number | null };
 
+/**
+ * The two messages that bracket a call, WhatsApp-style.
+ *
+ * `call-started` goes in as the call opens and carries the recording, so the
+ * thread shows a voice note that fills in as people speak. `voice-call` is the
+ * transcript left behind at hang-up, and points back at the same recording.
+ * Both are tagged so the hub's "what is this conversation called?" heuristic
+ * can skip them — neither is anything a participant typed.
+ */
+export type CallMarkerMetadata =
+  | { kind: "call-started"; recordingId: string }
+  | { kind: "voice-call"; recordingId?: string; durationSec?: number };
+
+/** A recording as the browser needs it: how long, and how loud, so far. */
+export type RecordingMeta = {
+  ended: boolean;
+  durationSec: number;
+  /** One bar per flushed segment, 0-1. Empty until the first few seconds land. */
+  waveform: number[];
+};
+
 /** One rendered turn in a conversation. */
 export type ChatMessage = {
   role: "user" | "assistant";

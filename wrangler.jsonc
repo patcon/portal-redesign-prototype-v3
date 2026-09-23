@@ -6,7 +6,10 @@
   "compatibility_flags": ["nodejs_compat"],
   "assets": {
     "not_found_handling": "single-page-application",
-    "run_worker_first": ["/agents/*"],
+    // `/recordings/*` is the Worker's, not the SPA's — it streams call audio
+    // out of R2. Deliberately not under `/events/`, which is the client's own
+    // route namespace and would stop the app being served.
+    "run_worker_first": ["/agents/*", "/recordings/*"],
   },
   "durable_objects": {
     "bindings": [
@@ -41,6 +44,17 @@
     "binding": "AI",
     "remote": true,
   },
+  // Recorded call audio. Raw PCM segments, a couple of seconds each, assembled
+  // into a WAV on the way out. R2 rather than KV: arbitrary size, strongly
+  // consistent (KV would serve a stale segment to a live listener), no read
+  // charge. Retention is bucket config, not Worker config — see
+  // `scripts/provision-r2.sh`.
+  "r2_buckets": [
+    {
+      "binding": "RECORDINGS",
+      "bucket_name": "portal-prototype-recordings",
+    },
+  ],
   "observability": {
     "enabled": true,
   },

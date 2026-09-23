@@ -21,6 +21,7 @@
  */
 
 import type { Transcriber, TranscriberSession, TranscriberSessionOptions } from "agents/voice";
+import { wavHeader } from "../wav";
 
 export interface LocalWhisperfileSTTOptions {
   /** whisper.cpp server inference endpoint. @default "http://localhost:8080/inference" */
@@ -152,38 +153,20 @@ class LocalWhisperSession implements TranscriberSession {
   }
 }
 
-/** Wraps raw 16-bit PCM samples in a minimal WAV (RIFF) container. */
+/**
+ * Wraps raw 16-bit PCM samples in a minimal WAV (RIFF) container.
+ *
+ * The header itself lives in `../wav.ts`, which the recording route also uses:
+ * one description of the format the voice socket sends, rather than two that
+ * can drift apart.
+ */
 function encodeWav(samples: Int16Array, sampleRate: number): ArrayBuffer {
-  const bytesPerSample = 2;
-  const blockAlign = bytesPerSample;
-  const dataSize = samples.length * bytesPerSample;
-  const buffer = new ArrayBuffer(44 + dataSize);
-  const view = new DataView(buffer);
-
-  const writeString = (offset: number, str: string) => {
-    for (let i = 0; i < str.length; i++) {
-      view.setUint8(offset + i, str.charCodeAt(i));
-    }
-  };
-
-  writeString(0, "RIFF");
-  view.setUint32(4, 36 + dataSize, true);
-  writeString(8, "WAVE");
-  writeString(12, "fmt ");
-  view.setUint32(16, 16, true); // fmt chunk size
-  view.setUint16(20, 1, true); // PCM
-  view.setUint16(22, 1, true); // mono
-  view.setUint32(24, sampleRate, true);
-  view.setUint32(28, sampleRate * blockAlign, true); // byte rate
-  view.setUint16(32, blockAlign, true);
-  view.setUint16(34, 16, true); // bits per sample
-  writeString(36, "data");
-  view.setUint32(40, dataSize, true);
-
-  let offset = 44;
-  for (let i = 0; i < samples.length; i++, offset += 2) {
-    view.setInt16(offset, samples[i], true);
-  }
-
-  return buffer;
+  const header = wavHeader(samples.byteLength, sampleRate);
+  const out = new Uint8Array(header.byteLength + samples.byteLength);
+  out.set(header, 0);
+  out.set(
+    new Uint8Array(samples.buffer, samples.byteOffset, samples.byteLength),
+    header.byteLength,
+  );
+  return out.buffer;
 }
