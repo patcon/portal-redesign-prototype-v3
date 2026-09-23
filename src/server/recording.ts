@@ -347,9 +347,11 @@ export class Recorder {
     const row = this.#recording(recordingId);
     if (!row) return;
 
-    const staged = this.#sql
-      .exec("SELECT seq, bytes FROM rec_pending WHERE recording = ? ORDER BY seq", recordingId)
-      .toArray() as { seq: number; bytes: Uint8Array }[];
+    const staged = (
+      this.#sql
+        .exec("SELECT seq, bytes FROM rec_pending WHERE recording = ? ORDER BY seq", recordingId)
+        .toArray() as { seq: number; bytes: ArrayBuffer | Uint8Array }[]
+    ).map((row) => ({ seq: Number(row.seq), bytes: asBytes(row.bytes) }));
     if (staged.length === 0) return;
 
     const total = staged.reduce((sum, chunk) => sum + chunk.bytes.byteLength, 0);
@@ -426,6 +428,21 @@ export class Recorder {
     this.#buffered.set(recordingId, total);
     return total;
   }
+}
+
+/**
+ * A BLOB read back out of SQLite, as bytes you can actually copy.
+ *
+ * Durable Object SQLite hands a BLOB back as an `ArrayBuffer`; `node:sqlite`,
+ * which the tests run against, hands back a `Uint8Array`. The difference is
+ * quiet and expensive: `TypedArray.set` accepts a `Uint8Array` and copies it,
+ * and accepts an `ArrayBuffer` and copies *nothing*, because an `ArrayBuffer`
+ * has no `length` for it to read. Every segment then comes out the right size
+ * and full of zeroes — a recording that plays, reports the right duration, and
+ * is 43 seconds of silence.
+ */
+function asBytes(value: ArrayBuffer | Uint8Array): Uint8Array {
+  return value instanceof Uint8Array ? value : new Uint8Array(value);
 }
 
 /** Where one segment lives. `chatId` in the path makes a whole conversation's

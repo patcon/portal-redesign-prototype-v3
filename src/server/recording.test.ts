@@ -16,9 +16,32 @@ function sqliteAdapter(db: DatabaseSync): SqlLike {
   return {
     exec(query: string, ...bindings: unknown[]) {
       const rows = db.prepare(query).all(...(bindings as never[]));
-      return { toArray: () => rows as Record<string, unknown>[] };
+      return { toArray: () => rows.map(asDurableObjectRow) };
     },
   };
+}
+
+/**
+ * One row, as a Durable Object would hand it back rather than as `node:sqlite`
+ * does.
+ *
+ * The two disagree about BLOBs: DO SQLite returns an `ArrayBuffer`, Node
+ * returns a `Uint8Array`. That difference is not cosmetic — `TypedArray.set`
+ * accepts the second and silently copies *nothing* from the first, because an
+ * `ArrayBuffer` has no `length`. Every segment is then the right size and
+ * entirely zeroes, which is a recording of perfect silence that plays, reports
+ * the right duration, and is wrong. So the fake converts, and the tests below
+ * are run against the shape production actually produces.
+ */
+function asDurableObjectRow(row: Record<string, unknown>): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(row)) {
+    out[key] =
+      value instanceof Uint8Array
+        ? value.buffer.slice(value.byteOffset, value.byteOffset + value.byteLength)
+        : value;
+  }
+  return out;
 }
 
 /** An R2 bucket that keeps its objects in a Map, and can be told to fail. */

@@ -368,6 +368,13 @@ function ChatVoiceMessage({ voice, isOutgoing }: { voice: NonNullable<ChatMessag
           setPlaying(false)
           setElapsed(0)
         }}
+        onError={(event) => {
+          // The button is pressed optimistically, so a recording that will not
+          // load otherwise looks exactly like one playing silently — which is
+          // the hardest version of this to notice.
+          setPlaying(false)
+          console.error("[voice] playback failed", event.currentTarget.error)
+        }}
       />
       <button
         onClick={toggle}

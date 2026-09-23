@@ -97,6 +97,17 @@ describe("ChatVoiceMessage", () => {
     expect(screen.getByText("0:07")).toBeTruthy();
   });
 
+  it("stops claiming to play when the audio fails to load", () => {
+    const { container } = renderVoice();
+    fireEvent.click(screen.getByRole("button", { name: /play voice message/i }));
+
+    fireEvent.error(audioElement(container));
+
+    // The button is pressed optimistically, so without this a recording that
+    // cannot be played looks exactly like one that is playing silently.
+    expect(screen.getByRole("button", { name: /play voice message/i })).toBeTruthy();
+  });
+
   it("returns to the start when the audio finishes", () => {
     const { container } = renderVoice();
     fireEvent.click(screen.getByRole("button", { name: /play voice message/i }));

@@ -206,7 +206,14 @@ export class ProjectHub extends DurableObject<Env> {
   async recordingManifest(chatId: string, recordingId: string) {
     const chat = await this.chats.get(assertChatId(chatId));
     if (!chat) return null;
-    return chat.recordingManifest(recordingId);
+    try {
+      return await chat.recordingManifest(recordingId);
+    } finally {
+      // Disposed rather than left to the collector: this is reached once a
+      // second per listener while a call is being followed, and an undisposed
+      // stub per poll is both a leak and a runtime warning.
+      (chat as Partial<Disposable>)[Symbol.dispose]?.();
+    }
   }
 
   /** Destroys the chat's own storage and removes it from the catalog. */
