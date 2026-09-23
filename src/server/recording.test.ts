@@ -399,6 +399,30 @@ describe("Recorder", () => {
       expect(staged(id).slice(320, 320 + tone.byteLength)).toEqual(tone);
     });
 
+    it("reports how long the pause was, once, for the transcript", () => {
+      const { recorder: clocked, wait } = onClock();
+      const { recordingId: id } = clocked.open("session-a", "conn-1", CHAT);
+      clocked.append(id, pcm(320));
+      wait(28_000);
+      clocked.append(id, pcm(320));
+
+      // The words either side of a pause run together as one sentence too, and
+      // the transcript needs the same mark the audio gets.
+      expect(clocked.takeResume(id)).toBe(28_000);
+      // Taken, so the next frame does not mark the same pause again.
+      expect(clocked.takeResume(id)).toBeNull();
+    });
+
+    it("reports nothing for audio that never stopped", () => {
+      const { recorder: clocked, wait } = onClock();
+      const { recordingId: id } = clocked.open("session-a", "conn-1", CHAT);
+      clocked.append(id, pcm(320));
+      wait(100);
+      clocked.append(id, pcm(320));
+
+      expect(clocked.takeResume(id)).toBeNull();
+    });
+
     it("leaves a call that ends while paused alone", async () => {
       const { recorder: clocked, wait } = onClock();
       const { recordingId: id } = clocked.open("session-a", "conn-1", CHAT);

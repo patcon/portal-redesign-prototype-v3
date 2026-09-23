@@ -117,6 +117,12 @@ export class Recorder {
   #lastFrameAt = new Map<string, number>();
 
   /**
+   * Pauses marked in the audio but not yet told to the transcript, since the
+   * audio path is synchronous and writing to the transcript is not.
+   */
+  #resumed = new Map<string, number>();
+
+  /**
    * Which recording a transcriber session is feeding, in memory.
    *
    * Audio arrives ten times a second, and a storage *read* closes the input
@@ -284,9 +290,25 @@ export class Recorder {
     const at = this.#now();
     const last = this.#lastFrameAt.get(recordingId);
     this.#lastFrameAt.set(recordingId, at);
-    if (last !== undefined && at - last >= RESUME_GAP_MS) this.#stage(recordingId, resumeTone());
+    if (last !== undefined && at - last >= RESUME_GAP_MS) {
+      this.#stage(recordingId, resumeTone());
+      this.#resumed.set(recordingId, at - last);
+    }
 
     return this.#stage(recordingId, new Uint8Array(chunk));
+  }
+
+  /**
+   * How long the pause was that this recording just came back from, or null.
+   *
+   * Taken rather than read: the caller is expected to put it in the transcript,
+   * and one pause should leave one mark however many frames arrive after it.
+   */
+  takeResume(recordingId: string): number | null {
+    const paused = this.#resumed.get(recordingId);
+    if (paused === undefined) return null;
+    this.#resumed.delete(recordingId);
+    return paused;
   }
 
   /** Stage one run of PCM, and say whether that is enough for a segment. */
@@ -327,6 +349,7 @@ export class Recorder {
     );
     this.#buffered.delete(recordingId);
     this.#lastFrameAt.delete(recordingId);
+    this.#resumed.delete(recordingId);
     for (const [session, id] of this.#bySession) {
       if (id === recordingId) this.#bySession.delete(session);
     }

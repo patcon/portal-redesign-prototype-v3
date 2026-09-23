@@ -35,3 +35,27 @@ export function recordingPath(
 ): string {
   return `/recordings/${encodeURIComponent(eventId)}/${encodeURIComponent(chatId)}/${encodeURIComponent(recordingId)}.${extension}`;
 }
+
+/**
+ * The break a pause leaves in a transcript, as the transcript spells it.
+ *
+ * Muting stops the client sending audio, so what someone said before a pause
+ * and what they said after it run together as one sentence — and a reader has
+ * no way to tell that anything is missing. The recording gets a pair of pops in
+ * the seam; this is the same mark for the words.
+ *
+ * `m:ss`, `h:mm:ss` from an hour on, matching the call timer, so the same
+ * length of time is written the same way wherever it is shown.
+ */
+export function pauseMarker(pausedMs: number): string {
+  const seconds = Math.round(pausedMs / 1000);
+  const hours = Math.floor(seconds / 3600);
+  const minutes = Math.floor((seconds % 3600) / 60);
+  const pad = (value: number) => String(value).padStart(2, "0");
+
+  const clock =
+    hours > 0
+      ? `${hours}:${pad(minutes)}:${pad(seconds % 60)}`
+      : `${minutes}:${pad(seconds % 60)}`;
+  return `[paused ${clock}]`;
+}

@@ -8,7 +8,7 @@ import { getTranscriber } from "./stt";
 import { Recorder } from "./recording";
 import { ONBOARDING_INSTRUCTIONS, WELCOME_MESSAGE } from "./prompts/onboarding";
 import { HOST_INSTRUCTIONS, HOST_WELCOME_MESSAGE } from "./prompts/host";
-import { isCallMarker } from "../shared";
+import { isCallMarker, pauseMarker } from "../shared";
 import type { ChatMeta, ChatOwner, ConversationState } from "../types";
 
 /** How much of a call's transcript the hub keeps for cross-conversation reads. */
@@ -275,6 +275,31 @@ export class GroupChat extends ChatAgent<Env, ConversationState> {
     if (this.#recorder.append(recordingId, chunk)) {
       void this.#recorder.flush(recordingId);
     }
+    // The pops go into the audio from inside `append`. The words are written
+    // from out here, because the transcript is storage and this is the hot path.
+    const paused = this.#recorder.takeResume(recordingId);
+    if (paused !== null) void this.#notePause(recordingId, paused);
+  }
+
+  /**
+   * Leave the break in the words too, where the pops leave it in the audio.
+   *
+   * Muting stops the client sending anything, so the sentence before a pause
+   * and the sentence after it are handed over as neighbours, and nothing in the
+   * transcript says otherwise. This goes in before the speech that resumed,
+   * because it is written the moment audio comes back and the transcription of
+   * that audio is still seconds away.
+   */
+  async #notePause(recordingId: string, pausedMs: number): Promise<void> {
+    const connectionId = [...this.#recording].find(([, id]) => id === recordingId)?.[0];
+    if (!connectionId) return;
+
+    console.log(`[call] ${connectionId.slice(0, 8)}: resumed after ${Math.round(pausedMs / 1000)}s`);
+    const utterances = this.#calls.get(connectionId) ?? [];
+    utterances.push(pauseMarker(pausedMs));
+    this.#calls.set(connectionId, utterances);
+    await this.#rememberUtterances(connectionId, utterances);
+    await this.#pushToHub();
   }
 
   /**
