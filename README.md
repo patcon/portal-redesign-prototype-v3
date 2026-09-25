@@ -41,12 +41,13 @@ the host console **on the tunnel URL** and the code sends devices there too.
 A quick tunnel is public to anyone who has the URL, and there is no
 authentication (see Routes).
 
-To run the local transcriber and the tunnelled app together, [mprocs] reads
-`mprocs.yaml`:
+To run the local transcriber and the tunnelled app together:
 
 ```sh
-mprocs   # whisper (pnpm stt:server) + app (pnpm start, CF_TUNNEL=1)
+pnpm start:all   # whisper (pnpm stt:server) + app (pnpm start, CF_TUNNEL=1)
 ```
+
+That is [mprocs], a dev dependency, reading `mprocs.yaml`.
 
 The `whisper` process expects `pnpm stt:setup` to have run once (see
 Speech-to-text).
@@ -253,6 +254,7 @@ pnpm stt:server   # leave running alongside `pnpm start`
 | ------------------------ | ------------------------------------------- |
 | `pnpm start`             | Vite dev server, bound to the LAN           |
 | `CF_TUNNEL=1 pnpm start` | …and behind a public quick tunnel           |
+| `pnpm start:all`         | Local whisper + tunnelled app, via mprocs   |
 | `pnpm test`              | Vitest                                      |
 | `pnpm typecheck`         | `tsc --noEmit`                              |
 | `pnpm lint`              | oxlint (import, react, jsx-a11y, vitest)    |
@@ -267,7 +269,7 @@ The point of the rebuild is how little there is of it. Measured on this repo:
 
 |                           |                  |
 | ------------------------- | ---------------- |
-| Runtime dependencies      | 17 (plus 15 dev) |
+| Runtime dependencies      | 17 (plus 19 dev) |
 | Browser code, this repo's | 1,249 lines      |
 | Worker code               | 1,044 lines      |
 | Vendored component source | 4,868 lines      |
