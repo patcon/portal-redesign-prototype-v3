@@ -6,6 +6,7 @@
   "type": "module",
   "scripts": {
     "start": "vite dev --host",
+    "start:all": "mprocs",
     "deploy": "vite build && wrangler deploy",
     "typecheck": "tsc --noEmit",
     "format": "oxfmt --check README.md index.html package.json scripts src vite.config.ts vitest.config.ts wrangler.jsonc .oxfmtrc.json",
@@ -47,6 +48,7 @@
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^6.0.3",
     "jsdom": "^30.1.0",
+    "mprocs": "^0.9.6",
     "oxfmt": "^0.68.0",
     "oxlint": "^1.83.0",
     "tailwindcss": "^4.3.2",

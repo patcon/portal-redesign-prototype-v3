@@ -6,7 +6,12 @@ import agents from "agents/vite";
 import { defineConfig } from "vite";
 
 export default defineConfig({
-  plugins: [agents(), react(), cloudflare(), tailwindcss()],
+  plugins: [
+    agents(),
+    react(),
+    cloudflare({ tunnel: { autoStart: process.env.CF_TUNNEL === "1" } }),
+    tailwindcss(),
+  ],
   resolve: {
     // `agents` is linked from the monorepo checkout, so `agents/react` would
     // otherwise resolve React through that tree and give the app two copies.

@@ -25,6 +25,35 @@ Serve on a LAN address (`pnpm start` already passes `--host`) and the QR code
 encodes that address, so an event runs from a laptop on a local router with no
 internet.
 
+### Reaching it from phones over a tunnel
+
+Phones only allow the microphone on a secure origin, so a plain `http://` LAN
+address can chat but cannot call. For that, run the dev server behind a
+Cloudflare quick tunnel:
+
+```sh
+CF_TUNNEL=1 pnpm start   # prints a https://….trycloudflare.com URL
+```
+
+Without `CF_TUNNEL`, press `t` + enter in the running server to open one on
+demand. The QR code is built from the address the console is open on, so open
+the host console **on the tunnel URL** and the code sends devices there too.
+A quick tunnel is public to anyone who has the URL, and there is no
+authentication (see Routes).
+
+To run the local transcriber and the tunnelled app together:
+
+```sh
+pnpm start:all   # whisper (pnpm stt:server) + app (pnpm start, CF_TUNNEL=1)
+```
+
+That is [mprocs], a dev dependency, reading `mprocs.yaml`.
+
+The `whisper` process expects `pnpm stt:setup` to have run once (see
+Speech-to-text).
+
+[mprocs]: https://github.com/pvolok/mprocs
+
 ## What it does
 
 ### For participants
@@ -43,8 +72,8 @@ internet.
 
 - A console of its own, with every conversation in the event in one view.
 - Read any conversation, and drop a message into it.
-- Read transcripts as they stream in *(coming soon — today the host sees the
-  excerpt each conversation pushes, not a live feed)*.
+- Read transcripts as they stream in _(coming soon — today the host sees the
+  excerpt each conversation pushes, not a live feed)_.
 - Listen in on a call still in progress, in near-realtime.
 - Ask the host thread's chatbot about what is being said across the
   conversations — it has tools for listing and searching them.
@@ -221,16 +250,18 @@ pnpm stt:server   # leave running alongside `pnpm start`
 
 ## Scripts
 
-| Command             | Does                                        |
-| ------------------- | ------------------------------------------- |
-| `pnpm start`        | Vite dev server, bound to the LAN           |
-| `pnpm test`         | Vitest                                      |
-| `pnpm typecheck`    | `tsc --noEmit`                              |
-| `pnpm lint`         | oxlint (import, react, jsx-a11y, vitest)    |
-| `pnpm format`       | oxfmt check                                 |
-| `pnpm format:write` | oxfmt fix                                   |
-| `pnpm types`        | Regenerate `env.d.ts` from `wrangler.jsonc` |
-| `pnpm deploy`       | Build and `wrangler deploy`                 |
+| Command                  | Does                                        |
+| ------------------------ | ------------------------------------------- |
+| `pnpm start`             | Vite dev server, bound to the LAN           |
+| `CF_TUNNEL=1 pnpm start` | …and behind a public quick tunnel           |
+| `pnpm start:all`         | Local whisper + tunnelled app, via mprocs   |
+| `pnpm test`              | Vitest                                      |
+| `pnpm typecheck`         | `tsc --noEmit`                              |
+| `pnpm lint`              | oxlint (import, react, jsx-a11y, vitest)    |
+| `pnpm format`            | oxfmt check                                 |
+| `pnpm format:write`      | oxfmt fix                                   |
+| `pnpm types`             | Regenerate `env.d.ts` from `wrangler.jsonc` |
+| `pnpm deploy`            | Build and `wrangler deploy`                 |
 
 ## Size
 
@@ -238,7 +269,7 @@ The point of the rebuild is how little there is of it. Measured on this repo:
 
 |                           |                  |
 | ------------------------- | ---------------- |
-| Runtime dependencies      | 17 (plus 15 dev) |
+| Runtime dependencies      | 17 (plus 19 dev) |
 | Browser code, this repo's | 1,249 lines      |
 | Worker code               | 1,044 lines      |
 | Vendored component source | 4,868 lines      |
